@@ -1,6 +1,9 @@
 #include <ncurses.h>			/* ncurses.h includes stdio.h */  
 #include <string.h> 
+#include <vector>
  
+void drawEverything();
+
 int main()
 {
  char mesg[]="Just a string";		/* message to be appeared on the screen */
@@ -17,4 +20,9 @@ int main()
  endwin();
 
  return 0;
+}
+
+void drawEverything()
+{
+
 }
