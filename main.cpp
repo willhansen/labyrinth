@@ -22,32 +22,71 @@ std::vector<Line> player_sight_lines;
 int player_x = 0;
 int player_y = 0;
 
-bool on_board(int x, int y)
+int num_rows,num_cols;				/* to store the number of rows and */
+
+bool onBoard(int x, int y)
 {
   return (x>=0 && y>=0 && x<BOARD_SIZE && y<BOARD_SIZE);
+}
+
+bool onScreen(int row, int col)
+{
+  return (row>=0 && col>=0 && row<num_rows && col<num_cols);
+}
+
+void attemptMove(int dx, int dy)
+{
+  Line line = lineCast(player_x, player_y, dx, dy);
+  if (line.mappings.size() > 0)
+  {
+    int x = line.mappings[0].board_x;
+    int y = line.mappings[0].board_y;
+    if (board[x][y].wall == false)
+    {
+      player_x = x;
+      player_y = y;
+    }
+  }
+
 }
 
 
 int main()
 {
-  initNCurses();
-  return 0;
-}
-
-void initNCurses()
-{
-  char mesg[]="Just a string";		/* message to be appeared on the screen */
-  int row,col;				/* to store the number of rows and *
-                       * the number of colums of the screen */
   initscr();				/* start the curses mode */
-  getmaxyx(stdscr,row,col);		/* get the number of rows and columns */
-  mvprintw(row/2,(col-strlen(mesg))/2,"%s",mesg);
-  /* print the message at the center of the screen */
-  mvprintw(row-2,0,"This screen has %d rows and %d columns\n",row,col);
-  printw("Try resizing your window(if possible) and then run this program again");
-  refresh();
-  getch();
-  endwin();
+  clear();
+  noecho();
+  cbreak();
+  keypad(stdscr, true);
+  getmaxyx(stdscr,num_rows,num_cols);		/* get the number of rows and columns */
+
+  board[3][3].wall = true;
+  while(true)
+  {
+    // Get input
+    int in = getch();
+    // Process input
+    if (in == 'q')
+      break;
+    else if (in == 'h')
+      attemptMove(-1, 0);
+    else if (in == 'j')
+      attemptMove(0, -1);
+    else if (in == 'k')
+      attemptMove(0, 1);
+    else if (in == 'l')
+      attemptMove(1, 0);
+    
+    // Tick everything
+    updateSightLines();
+      
+    
+    // draw things
+    drawEverything();
+  }
+
+  endwin(); // End curses
+  return 0;
 }
 
 void updateSightLines()
@@ -121,7 +160,7 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
     int rounded_x = static_cast<double>(x);
     int rounded_y = static_cast<double>(y);
 
-    if (!on_board(rounded_x, rounded_y))
+    if (!onBoard(rounded_x, rounded_y))
     {
       break;
     }
@@ -134,8 +173,8 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
       square_map.board_x = rounded_x;
       square_map.board_y = rounded_y;
 
-      square_map.line_x = rounded_x;
-      square_map.line_y = rounded_y;
+      square_map.line_x = rounded_x - start_x;
+      square_map.line_y = rounded_y - start_y;
 
       line.mappings.push_back(square_map);
     }
@@ -144,7 +183,92 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
   return line;
 }
 
+void screenToSightMap(int row, int col, int& x, int& y)
+{
+  // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
+  // The screen is (y, x) in the fourth quadrant (but y is positive)
+  x = player_x - num_cols/2 + col;
+  y = player_y + num_rows/2 - row;
+  return;
+}
+
+void sightMapToScreen(int x, int y, int& row, int& col)
+{
+  row = player_y + num_rows/2 - y;
+  col = x - player_x + num_cols/2;
+}
+
+void drawLine(Line line)
+{
+  init_pair(1, COLOR_RED, COLOR_BLACK);
+  attron(COLOR_PAIR(1));
+  for (int i = 0; i < line.mappings.size(); i++)
+  {
+    int bx = line.mappings[i].board_x;
+    int by = line.mappings[i].board_y;
+    int lx = line.mappings[i].line_x;
+    int ly = line.mappings[i].line_y;
+    int row, col;
+    sightMapToScreen(bx, by, row, col);
+    if(onScreen(row, col))
+    {
+      int glyph;
+      if (lx == 0)
+        glyph = '|';
+      else 
+      {
+        double slope = ly/lx;
+        if (slope > 2)
+          glyph = '|';
+        else if (slope > 1.0/2.0)
+          glyph = '/';
+        else if (slope > -1.0/2.0)
+          glyph = '-';
+        else if (slope > -2)
+          glyph = '\\';
+        else
+          glyph = '|';
+      }
+
+      mvaddch(row, col, glyph);
+    }
+  }
+  attroff(COLOR_PAIR(1));
+}
+
 void drawEverything()
 {
+  // Draw all the floor and walls
+  // For every square on the screen
+  for (int row = 0; row < num_rows; row++)
+  {
+    for (int col = 0; col < num_cols; col++)
+    {
+      int x, y;
+      screenToSightMap(row, col, x, y);
+      int glyph;
+      if (!onBoard(x, y))
+        glyph = ' ';
+      else if (board[x][y].wall == true)
+        glyph = '#';
+      else
+        glyph = '.';
+      mvaddch(row, col, glyph);
+    }
+  }
+  // Draw the player
+  int row, col;
+  sightMapToScreen(player_x, player_y, row, col);
+  if (onScreen(row, col))
+  {
+    mvaddch(row, col, '@');
+  }
 
+  for(int i = 0; i < player_sight_lines.size(); i++)
+  {
+    drawLine(player_sight_lines[i]);
+  }
+
+  refresh();
 }
+
