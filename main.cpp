@@ -8,7 +8,7 @@
 #include <cmath>
 
 const int BOARD_SIZE = 100;
-const int SIGHT_RADIUS = 20; 
+const int SIGHT_RADIUS = 50; 
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -64,7 +64,15 @@ void screenToSightMap(int row, int col, int& x, int& y)
 }
 
 // Sight map positions are relative to its center
+// Screen positions are relative to top left
 void sightMapToScreen(int x, int y, int& row, int& col)
+{
+  row = num_rows/2 - y;
+  col = x + num_cols/2;
+}
+
+// This gives board to screen coordinates, player is at center, PORTALS ARE IGNORED
+void naiveBoardToScreen(int x, int y, int& row, int& col)
 {
   row = player_y + num_rows/2 - y;
   col = x - player_x + num_cols/2;
@@ -100,20 +108,31 @@ void initNCurses()
   init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
 }
 
+void rectToWall(int left, int bottom, int right, int top)
+{
+  for (int x = left; x < right+1; x++)
+  {
+    board[x][bottom].wall = true;
+    board[x][top].wall = true;
+  }
+  for (int y = bottom; y < top+1; y++)
+  {
+    board[left][y].wall = true;
+    board[right][y].wall = true;
+  }
+}
+
+
 void initBoard()
 {
-  board[3][3].wall = true;
-  for (int x = 0; x < BOARD_SIZE; x++)
-  {
-    board[x][0].wall = true;
-    board[x][BOARD_SIZE-1].wall = true;
-  }
-  for (int y = 0; y < BOARD_SIZE; y++)
-  {
-    board[0][y].wall = true;
-    board[BOARD_SIZE-1][y].wall = true;
-  }
+  rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
+  rectToWall(30, 5, 50, 20);
+
+  board[20][13].wall = true;
+  makePortalPair(20,12,40,9);
+  board[20][11].wall = true;
   makePortalPair(20,10,40,10);
+  board[20][9].wall = true;
 }
 
 int main()
@@ -137,6 +156,14 @@ int main()
       attemptMove(0, 1);
     else if (in == 'l')
       attemptMove(1, 0);
+    else if (in == 'y')
+      attemptMove(-1, 1);
+    else if (in == 'u')
+      attemptMove(1, 1);
+    else if (in == 'b')
+      attemptMove(-1, -1);
+    else if (in == 'n')
+      attemptMove(1, -1);
     else if (in == KEY_MOUSE)
     {
       MEVENT mouse_event;
@@ -235,26 +262,29 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
     if (rounded_x != prev_square_x || rounded_y != prev_square_y)
     {
       Square square = board[rounded_x][rounded_y];
+      // Note: these will have to be rotated if going through a rotated portal
+      int x_step_taken = rounded_x - prev_square_x;
+      int y_step_taken = rounded_y - prev_square_y;
       // If a portal goes directly to another portal, we need to go through that one too, right away.
       while (square.portal != nullptr)
       {
+        // These are the straight translational offset given by portals.  Not including the step out of the portal, or rotation.
         int x_portal_offset = square.portal->new_x - rounded_x;
         int y_portal_offset = square.portal->new_y - rounded_y;
         // TODO: portal rotation here
-        int portal_rotation = square.portal->rotation;
-
-        // TODO: These will need to be rotated, because the autostep is coming out of a maybe rotated portal.
-        int x_step_offset = rounded_x - prev_square_x;
-        int y_step_offset = rounded_y - prev_square_y;
-
-        x_offset += x_portal_offset + x_step_offset;
-        y_offset += y_portal_offset + y_step_offset;
-        rounded_x += x_offset;
-        rounded_y += y_offset;
-        x += x_offset;
-        y += y_offset;
+        
+        
+        int portal_dx = x_portal_offset + x_step_taken;
+        int portal_dy = y_portal_offset + y_step_taken;
+        x_offset += portal_dx; // TODO: rotate the step taken here
+        y_offset += portal_dy;
+        rounded_x += portal_dx;
+        rounded_y += portal_dy;
+        x += portal_dx;
+        y += portal_dy;
 
         square = board[rounded_x][rounded_y];
+
       }
 
       SquareMap square_map;
@@ -335,6 +365,11 @@ void drawEverything()
       mvaddch(row, col, '.');
     }
   }
+  // Draw the player at the center of the sightmap
+  int row, col;
+  sightMapToScreen(0, 0, row, col);
+  mvaddch(row, col, '@');
+  
   // For every sight line
   for(int line_num = 0; line_num < player_sight_lines.size(); line_num++)
   {
@@ -364,6 +399,9 @@ void drawEverything()
       attron(COLOR_PAIR(color));
       mvaddch(row, col, glyph);
       attroff(COLOR_PAIR(color));
+      // if we just drew a wall, done with this line
+      if (board_square.wall == true)
+        break;
     }
   }
   // Draw all the floor and walls
@@ -405,6 +443,8 @@ void drawEverything()
   }
   */
 
+  // move the cursor
+  move(0,0);
   refresh();
 }
 
