@@ -8,11 +8,15 @@
 #include <cmath>
 
 const int BOARD_SIZE = 100;
-const int SIGHT_RADIUS = 10; 
+const int SIGHT_RADIUS = 20; 
+
+const int WHITE_ON_BLACK = 0;
+const int RED_ON_BLACK = 1;
+const int BLACK_ON_WHITE = 2;
 
 void drawEverything();
 void updateSightLines();
-Line lineCast(int start_x, int start_y, int d_x, int d_y, bool stop_at_wall = false);
+Line lineCast(int start_x, int start_y, int d_x, int d_y);
 void initNCurses();
 
 //TODO: make these non-global
@@ -21,6 +25,7 @@ std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>
 std::vector<Line> player_sight_lines;
 int player_x = 1;
 int player_y = 1;
+int mouse_x, mouse_y;
 
 int num_rows,num_cols;				/* to store the number of rows and */
 
@@ -49,6 +54,23 @@ void attemptMove(int dx, int dy)
   }
 }
 
+void screenToSightMap(int row, int col, int& x, int& y)
+{
+  // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
+  // The screen is (y, x) in the fourth quadrant (but y is positive)
+  x = player_x - num_cols/2 + col;
+  y = player_y + num_rows/2 - row;
+  return;
+}
+
+// Sight map positions are relative to its center
+void sightMapToScreen(int x, int y, int& row, int& col)
+{
+  row = player_y + num_rows/2 - y;
+  col = x - player_x + num_cols/2;
+}
+
+
 void makePortalPair(int x1, int y1, int x2, int y2)
 {
   if (!onBoard(x1, y1) || !onBoard(x2, y2))
@@ -71,10 +93,11 @@ void initNCurses()
   cbreak();
   keypad(stdscr, true);
   getmaxyx(stdscr,num_rows,num_cols);		/* get the number of rows and columns */
+  mousemask(ALL_MOUSE_EVENTS, NULL);
 
-  init_pair(0, COLOR_WHITE, COLOR_BLACK);
-  init_pair(1, COLOR_RED, COLOR_BLACK);
-  init_pair(2, COLOR_BLACK, COLOR_WHITE);
+  init_pair(WHITE_ON_BLACK, COLOR_WHITE, COLOR_BLACK);
+  init_pair(RED_ON_BLACK, COLOR_RED, COLOR_BLACK);
+  init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
 }
 
 void initBoard()
@@ -114,7 +137,12 @@ int main()
       attemptMove(0, 1);
     else if (in == 'l')
       attemptMove(1, 0);
-    
+    else if (in == KEY_MOUSE)
+    {
+      MEVENT mouse_event;
+      getmouse(&mouse_event);
+      screenToSightMap(mouse_event.y, mouse_event.x, mouse_x, mouse_y);
+    }
     // Tick everything
     updateSightLines();
       
@@ -161,11 +189,11 @@ void updateSightLines()
   // Find the sight lines in this order
   for(int i = 0; i < static_cast<int>(rel_x.size()); i++)
   {
-    player_sight_lines.push_back(lineCast(player_x, player_y, rel_x[i], rel_y[i], true));
+    player_sight_lines.push_back(lineCast(player_x, player_y, rel_x[i], rel_y[i]));
   }
 }
 
-Line lineCast(int start_x, int start_y, int rel_x, int rel_y, bool stop_at_wall)
+Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
 {
   Line line;
 
@@ -195,8 +223,8 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y, bool stop_at_wall)
     x += dx;
     y += dy;
 
-    int rounded_x = static_cast<double>(x);
-    int rounded_y = static_cast<double>(y);
+    int rounded_x = static_cast<double>(std::round(x));
+    int rounded_y = static_cast<double>(std::round(y));
 
     if (!onBoard(rounded_x, rounded_y))
     {
@@ -242,30 +270,9 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y, bool stop_at_wall)
       prev_square_x = rounded_x;
       prev_square_y = rounded_y;
     }
-
-    // This check is at the end so that we include the wall in the line, but it is the end of the line.
-    if(stop_at_wall && board[rounded_x][rounded_y].wall == true)
-    {
-      break;
-    }
   }
 
   return line;
-}
-
-void screenToSightMap(int row, int col, int& x, int& y)
-{
-  // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
-  // The screen is (y, x) in the fourth quadrant (but y is positive)
-  x = player_x - num_cols/2 + col;
-  y = player_y + num_rows/2 - row;
-  return;
-}
-
-void sightMapToScreen(int x, int y, int& row, int& col)
-{
-  row = player_y + num_rows/2 - y;
-  col = x - player_x + num_cols/2;
 }
 
 void drawLine(Line line)
@@ -311,17 +318,57 @@ void drawLine(Line line)
           glyph = '|';
       }
 
-      attron(COLOR_PAIR(1));
+      attron(COLOR_PAIR(RED_ON_BLACK));
       mvaddch(row, col, glyph);
-      attroff(COLOR_PAIR(1));
+      attroff(COLOR_PAIR(RED_ON_BLACK));
     }
   }
 }
 
 void drawEverything()
 {
+  // Fill background
+  for (int row = 0; row < num_rows; row++)
+  {
+    for (int col = 0; col < num_cols; col++)
+    {
+      mvaddch(row, col, '.');
+    }
+  }
+  // For every sight line
+  for(int line_num = 0; line_num < player_sight_lines.size(); line_num++)
+  {
+    Line line = player_sight_lines[line_num];
+    for(int square_num = 0; square_num < line.mappings.size(); square_num++)
+    {
+      SquareMap mapping = line.mappings[square_num];
+      Square board_square = board[mapping.board_x][mapping.board_y];
+      int row, col;
+      sightMapToScreen(mapping.line_x, mapping.line_y, row, col);
+      int color = WHITE_ON_BLACK;
+      char glyph;
+      // if player, show the player.
+      if (mapping.board_x == player_x && mapping.board_y == player_y)
+      {
+        glyph = '@';
+      }
+      else if (board_square.wall == true)
+      {
+        color = BLACK_ON_WHITE;
+        glyph = ' ';
+      }
+      else
+      {
+        glyph = ' ';
+      }
+      attron(COLOR_PAIR(color));
+      mvaddch(row, col, glyph);
+      attroff(COLOR_PAIR(color));
+    }
+  }
   // Draw all the floor and walls
   // For every square on the screen
+  /*
   for (int row = 0; row < num_rows; row++)
   {
     for (int col = 0; col < num_cols; col++)
@@ -356,6 +403,7 @@ void drawEverything()
   {
     drawLine(player_sight_lines[i]);
   }
+  */
 
   refresh();
 }
