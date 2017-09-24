@@ -15,7 +15,11 @@ const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 
-const char OUT_OF_VIEW = '.';
+//const int BACKGROUND_COLOR = WHITE_ON_BLACK;
+//const char OUT_OF_VIEW = '.';
+const int BACKGROUND_COLOR = BLACK_ON_WHITE;
+const char OUT_OF_VIEW = ' ';
+
 const char FLOOR = ' ';
 
 void drawEverything();
@@ -154,6 +158,7 @@ void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
 void initBoard()
 {
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
+  rectToWall(1, 5, 1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
 
   board[45][13].wall = true;
@@ -165,7 +170,19 @@ void initBoard()
   board[45][8].wall = true;
   board[20][8].wall = true;
 
-  makeNicePortalPair(20, 20, 20, 25, 5, 0);
+  board[1][11].wall = false;
+  makePortalPair(1, 11, 30, 11);
+
+  makeNicePortalPair(20, 20, 20, 30, 7, 0);
+
+  makeNicePortalPair(60, 20, 72, 20, 5, 0);
+  for (int y = 10; y < 31; y++)
+  {
+    board[60][y].wall = true;
+    board[66][y].wall = true;
+    board[72][y].wall = true;
+    board[78][y].wall = true;
+  }
 
 }
 
@@ -473,6 +490,7 @@ void drawLine(Line line)
 void drawSightMap()
 {
   // Fill background
+  attron(COLOR_PAIR(BACKGROUND_COLOR));
   for (int row = 0; row < num_rows; row++)
   {
     for (int col = 0; col < num_cols; col++)
@@ -480,6 +498,7 @@ void drawSightMap()
       mvaddch(row, col, OUT_OF_VIEW);
     }
   }
+  attroff(COLOR_PAIR(BACKGROUND_COLOR));
   // Draw the player at the center of the sightmap
   int row, col;
   sightMapToScreen(0, 0, row, col);
