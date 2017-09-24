@@ -1,6 +1,7 @@
 #include "square.h"
 #include "line.h"
 #include "portal.h"
+#include "mote.h"
 
 #include <ncurses.h>			/* ncurses.h includes stdio.h */  
 #include <string.h> 
@@ -17,8 +18,8 @@ const int BLACK_ON_WHITE = 2;
 
 //const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 //const char OUT_OF_VIEW = '.';
-const int BACKGROUND_COLOR = BLACK_ON_WHITE;
-const char OUT_OF_VIEW = ' ';
+const int BACKGROUND_COLOR = WHITE_ON_BLACK;
+const char OUT_OF_VIEW = '.';
 
 const char FLOOR = ' ';
 
@@ -31,8 +32,8 @@ void initNCurses();
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
-int player_x = 1;
-int player_y = 1;
+int player_x;
+int player_y;
 int mouse_x, mouse_y;
 
 int num_rows,num_cols;				/* to store the number of rows and */
@@ -157,10 +158,13 @@ void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
 
 void initBoard()
 {
+  player_x = 1;
+  player_y = 1;
+  
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
-  rectToWall(1, 5, 1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
 
+  /*
   board[45][13].wall = true;
   board[20][13].wall = true;
   makePortalPair(20,12,45,12);
@@ -169,6 +173,7 @@ void initBoard()
   makePortalPair(20,9,45,9);
   board[45][8].wall = true;
   board[20][8].wall = true;
+  */
 
   board[1][11].wall = false;
   makePortalPair(1, 11, 30, 11);
@@ -229,8 +234,65 @@ int main()
 
 void updateSightLines()
 {
+  // the order these are updated is essentially bottom to top in terms of draw order
+  
   std::vector<int> rel_x;
   std::vector<int> rel_y;
+  // The diagonals
+  rel_x.push_back(SIGHT_RADIUS);
+  rel_y.push_back(SIGHT_RADIUS);
+
+  rel_x.push_back(-SIGHT_RADIUS);
+  rel_y.push_back(SIGHT_RADIUS);
+
+  rel_x.push_back(SIGHT_RADIUS);
+  rel_y.push_back(-SIGHT_RADIUS);
+
+  rel_x.push_back(-SIGHT_RADIUS);
+  rel_y.push_back(-SIGHT_RADIUS);
+
+  // All the non-diagonals and non-orthogonals, moving from diagonal to orthogonal
+  for(int i = SIGHT_RADIUS-1; i > 0; i--)
+  {
+    // all 8 octants
+    rel_x.push_back(SIGHT_RADIUS);
+    rel_y.push_back(i);
+
+    rel_x.push_back(i);
+    rel_y.push_back(SIGHT_RADIUS);
+
+    rel_x.push_back(-i);
+    rel_y.push_back(SIGHT_RADIUS);
+
+    rel_x.push_back(-SIGHT_RADIUS);
+    rel_y.push_back(i);
+
+    rel_x.push_back(-SIGHT_RADIUS);
+    rel_y.push_back(-i);
+
+    rel_x.push_back(-i);
+    rel_y.push_back(-SIGHT_RADIUS);
+
+    rel_x.push_back(i);
+    rel_y.push_back(-SIGHT_RADIUS);
+
+    rel_x.push_back(SIGHT_RADIUS);
+    rel_y.push_back(-i);
+  }
+  // The orthogonals
+  
+  rel_x.push_back(SIGHT_RADIUS);
+  rel_y.push_back(0);
+
+  rel_x.push_back(0);
+  rel_y.push_back(SIGHT_RADIUS);
+
+  rel_x.push_back(-SIGHT_RADIUS);
+  rel_y.push_back(0);
+
+  rel_x.push_back(0);
+  rel_y.push_back(-SIGHT_RADIUS);
+  /*
   // all the relative positions in a square around (0,0)
   for(int y = 0; y <= SIGHT_RADIUS; y++)
   {
@@ -257,6 +319,7 @@ void updateSightLines()
     rel_x.push_back(SIGHT_RADIUS);
     rel_y.push_back(y);
   }
+  */
 
   player_sight_lines.clear();
   // Find the sight lines in this order
