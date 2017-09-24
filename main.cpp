@@ -8,7 +8,7 @@
 #include <cmath>
 
 const int BOARD_SIZE = 100;
-const int SIGHT_RADIUS = 50; 
+const int SIGHT_RADIUS = 10; 
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -57,7 +57,7 @@ void attemptMove(int dx, int dy)
   }
 }
 
-void screenToSightMap(int row, int col, int& x, int& y)
+void screenToBoard(int row, int col, int& x, int& y)
 {
   // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
   // The screen is (y, x) in the fourth quadrant (but y is positive)
@@ -80,7 +80,6 @@ void naiveBoardToScreen(int x, int y, int& row, int& col)
   row = player_y + num_rows/2 - y;
   col = x - player_x + num_cols/2;
 }
-
 
 void makePortalPair(int x1, int y1, int x2, int y2)
 {
@@ -132,10 +131,8 @@ void initBoard()
   rectToWall(30, 5, 50, 20);
 
   board[20][13].wall = true;
-  makePortalPair(20,12,40,9);
+  makePortalPair(20,12,45,12);
   board[20][11].wall = true;
-  makePortalPair(20,10,40,10);
-  board[20][9].wall = true;
 }
 
 int main()
@@ -417,7 +414,7 @@ void drawLine(Line line)
       prev_ly = 0;
     }
     int row, col;
-    sightMapToScreen(bx, by, row, col);
+    naiveBoardToScreen(bx, by, row, col);
     if(onScreen(row, col))
     {
       char glyph;
@@ -449,6 +446,7 @@ void drawLine(Line line)
 
 void drawEverything()
 {
+  /*
   // Fill background
   for (int row = 0; row < num_rows; row++)
   {
@@ -496,15 +494,16 @@ void drawEverything()
         break;
     }
   }
+  */
   // Draw all the floor and walls
   // For every square on the screen
-  /*
+  
   for (int row = 0; row < num_rows; row++)
   {
     for (int col = 0; col < num_cols; col++)
     {
       int x, y;
-      screenToSightMap(row, col, x, y);
+      screenToBoard(row, col, x, y);
       char glyph;
       int color = 0;
       if (!onBoard(x, y))
@@ -523,7 +522,7 @@ void drawEverything()
   }
   // Draw the player
   int row, col;
-  sightMapToScreen(player_x, player_y, row, col);
+  naiveBoardToScreen(player_x, player_y, row, col);
   if (onScreen(row, col))
   {
     mvaddch(row, col, '@');
@@ -533,7 +532,7 @@ void drawEverything()
   {
     drawLine(player_sight_lines[i]);
   }
-  */
+  
 
   // move the cursor
   move(0,0);
