@@ -14,6 +14,9 @@ const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 
+const char OUT_OF_VIEW = '.';
+const char FLOOR = ' ';
+
 void drawEverything();
 void updateSightLines();
 Line lineCast(int start_x, int start_y, int d_x, int d_y);
@@ -83,13 +86,13 @@ void makePortalPair(int x1, int y1, int x2, int y2)
 {
   if (!onBoard(x1, y1) || !onBoard(x2, y2))
     return;
-  board[x1][y1].portal.reset(new Portal());
-  board[x1][y1].portal->new_x = x2;
-  board[x1][y1].portal->new_y = y2;
+  board[x1][y1].left_portal.reset(new Portal());
+  board[x1][y1].left_portal->new_x = x2;
+  board[x1][y1].left_portal->new_y = y2;
 
-  board[x2][y2].portal.reset(new Portal());
-  board[x2][y2].portal->new_x = x1;
-  board[x2][y2].portal->new_y = y1;
+  board[x2][y2].left_portal.reset(new Portal());
+  board[x2][y2].left_portal->new_x = x1;
+  board[x2][y2].left_portal->new_y = y1;
 }
 
 void initNCurses()
@@ -164,12 +167,7 @@ int main()
       attemptMove(-1, -1);
     else if (in == 'n')
       attemptMove(1, -1);
-    else if (in == KEY_MOUSE)
-    {
-      MEVENT mouse_event;
-      getmouse(&mouse_event);
-      screenToSightMap(mouse_event.y, mouse_event.x, mouse_x, mouse_y);
-    }
+
     // Tick everything
     updateSightLines();
       
@@ -220,6 +218,105 @@ void updateSightLines()
   }
 }
 
+// Redirect an orthogonal step between adjacent squares.
+void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
+{
+  int end_x = start_x + dx;
+  int end_y = start_y + dy;
+  // X step
+  if (std::abs(start_x - end_x) > 0)
+  {
+    int small_x = std::min(start_x, end_x);
+    int big_x = std::max(start_x, end_x);
+    int y = start_y;
+    // only bigger number square could have a portal for this transition 
+    if (onBoard(big_x, y) && board[big_x][y].left_portal != nullptr)
+    {
+      dx += board[big_x][y].left_portal->new_x - big_x;
+      dy += board[big_x][y].left_portal->new_y - y;
+    }
+  }
+  // Y step
+  else
+  {
+    int small_y = std::min(start_y, end_y);
+    int big_y = std::max(start_y, end_y);
+    int x = start_x;
+    // only bigger number square could have a portal for this transition 
+    if (onBoard(x, big_y) && board[x][big_y].down_portal != nullptr)
+    {
+      dx += board[x][big_y].down_portal->new_x - x;
+      dy += board[x][big_y].down_portal->new_y - big_y;
+    }
+  }
+}
+
+// given a small step, redirect it accordingly if it goes through portals
+// Assumes this step is less than 1 square long
+// Assumes this step crosses a square boundary
+void redirect(double start_x, double start_y, double& dx, double& dy)
+{
+  double end_x = start_x + dx;
+  double end_y = start_y + dy;
+  // Portals may be found on the bottom and left of any square
+  // In the case of exact diagonal, go though the portal on the bottom of a square
+  int start_x_int = static_cast<int>(std::round(start_x));
+  int start_y_int = static_cast<int>(std::round(start_y));
+  int end_x_int = static_cast<int>(std::round(end_x));
+  int end_y_int = static_cast<int>(std::round(end_y));
+
+  std::vector<int> x_steps_int;
+  std::vector<int> y_steps_int;
+  // if only orthogonal step
+  if (std::abs(end_x_int - start_x_int) + std::abs(end_y_int - start_y_int) < 2)
+  {
+    x_steps_int.push_back(end_x_int-start_x_int);
+    y_steps_int.push_back(end_y_int-start_y_int);
+  }
+  // if diagonal step
+  else
+  {
+    // need to find which orthogonal square this went through, If a tie, pick the vertical
+    double y_division = std::round(std::min(start_y, end_y)) + 0.5;
+    double x_division = std::round(std::min(start_x, end_x)) + 0.5;
+    double step_slope = (end_y - start_y)/(end_x - start_x);
+    double y_at_x_division = start_y + step_slope * (x_division - start_x);
+
+    int mid_x_int, mid_y_int; // for the intermediate step
+    // This line decides diagonal tie breaks
+    if ((end_y > start_y && y_at_x_division < y_division) || ( end_y < start_y && y_at_x_division > y_division))
+    {
+      // Horizontal then vertical
+      x_steps_int.push_back(end_x_int-start_x_int);
+      y_steps_int.push_back(0);
+
+      x_steps_int.push_back(0);
+      y_steps_int.push_back(end_y_int-start_y_int);
+    }
+    else
+    {
+      // vertical then horizontal
+      x_steps_int.push_back(0);
+      y_steps_int.push_back(end_y_int-start_y_int);
+
+      x_steps_int.push_back(end_x_int-start_x_int);
+      y_steps_int.push_back(0);
+    }
+  }
+
+  int temp_start_x_int = start_x_int;
+  int temp_start_y_int = start_y_int;
+  for (int i=0; i < x_steps_int.size(); i++)
+  {
+    orthogonalRedirect(temp_start_x_int, temp_start_y_int, x_steps_int[i], y_steps_int[i]);
+    temp_start_x_int += x_steps_int[i];
+    temp_start_y_int += y_steps_int[i];
+  }
+
+  dx += temp_start_x_int - end_x;
+  dy += temp_start_y_int - end_y;
+}
+
 Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
 {
   Line line;
@@ -263,29 +360,24 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
     {
       Square square = board[rounded_x][rounded_y];
       // Note: these will have to be rotated if going through a rotated portal
-      int x_step_taken = rounded_x - prev_square_x;
-      int y_step_taken = rounded_y - prev_square_y;
-      // If a portal goes directly to another portal, we need to go through that one too, right away.
-      while (square.portal != nullptr)
+      double new_dx = dx;
+      double new_dy = dy;
+      redirect(x-dx, y-dy, new_dx, new_dy);
+      int portal_dx = static_cast<int>(std::round(new_dx - dx));
+      int portal_dy = static_cast<int>(std::round(new_dy - dy));
+      
+      x_offset += portal_dx; 
+      y_offset += portal_dy;
+      rounded_x += portal_dx;
+      rounded_y += portal_dy;
+      x += portal_dx;
+      y += portal_dy;
+      
+      if (!onBoard(rounded_x, rounded_y))
       {
-        // These are the straight translational offset given by portals.  Not including the step out of the portal, or rotation.
-        int x_portal_offset = square.portal->new_x - rounded_x;
-        int y_portal_offset = square.portal->new_y - rounded_y;
-        // TODO: portal rotation here
-        
-        
-        int portal_dx = x_portal_offset + x_step_taken;
-        int portal_dy = y_portal_offset + y_step_taken;
-        x_offset += portal_dx; // TODO: rotate the step taken here
-        y_offset += portal_dy;
-        rounded_x += portal_dx;
-        rounded_y += portal_dy;
-        x += portal_dx;
-        y += portal_dy;
-
-        square = board[rounded_x][rounded_y];
-
+        break;
       }
+
 
       SquareMap square_map;
 
@@ -362,7 +454,7 @@ void drawEverything()
   {
     for (int col = 0; col < num_cols; col++)
     {
-      mvaddch(row, col, '.');
+      mvaddch(row, col, OUT_OF_VIEW);
     }
   }
   // Draw the player at the center of the sightmap
@@ -394,7 +486,7 @@ void drawEverything()
       }
       else
       {
-        glyph = ' ';
+        glyph = FLOOR;
       }
       attron(COLOR_PAIR(color));
       mvaddch(row, col, glyph);

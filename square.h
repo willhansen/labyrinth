@@ -8,7 +8,8 @@
 struct Square
 {
   bool wall = false;
-  std::shared_ptr<Portal> portal = nullptr;
+  std::shared_ptr<Portal> down_portal;
+  std::shared_ptr<Portal> left_portal;
 };
 
 #endif
