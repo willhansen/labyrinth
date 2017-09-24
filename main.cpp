@@ -8,7 +8,7 @@
 #include <cmath>
 
 const int BOARD_SIZE = 100;
-const int SIGHT_RADIUS = 10; 
+const int SIGHT_RADIUS = 50; 
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -81,17 +81,30 @@ void naiveBoardToScreen(int x, int y, int& row, int& col)
   col = x - player_x + num_cols/2;
 }
 
-void makePortalPair(int x1, int y1, int x2, int y2)
+void makePortalPair(int x1, int y1, int x2, int y2, bool left=true)
 {
   if (!onBoard(x1, y1) || !onBoard(x2, y2))
     return;
-  board[x1][y1].left_portal.reset(new Portal());
-  board[x1][y1].left_portal->new_x = x2;
-  board[x1][y1].left_portal->new_y = y2;
+  if (left)
+  {
+    board[x1][y1].left_portal.reset(new Portal());
+    board[x1][y1].left_portal->new_x = x2;
+    board[x1][y1].left_portal->new_y = y2;
 
-  board[x2][y2].left_portal.reset(new Portal());
-  board[x2][y2].left_portal->new_x = x1;
-  board[x2][y2].left_portal->new_y = y1;
+    board[x2][y2].left_portal.reset(new Portal());
+    board[x2][y2].left_portal->new_x = x1;
+    board[x2][y2].left_portal->new_y = y1;
+  }
+  else
+  {
+    board[x1][y1].down_portal.reset(new Portal());
+    board[x1][y1].down_portal->new_x = x2;
+    board[x1][y1].down_portal->new_y = y2;
+
+    board[x2][y2].down_portal.reset(new Portal());
+    board[x2][y2].down_portal->new_x = x1;
+    board[x2][y2].down_portal->new_y = y1;
+  }
 }
 
 void initNCurses()
@@ -130,9 +143,15 @@ void initBoard()
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
 
-  board[20][13].wall = true;
+  //board[20][13].wall = true;
   makePortalPair(20,12,45,12);
-  board[20][11].wall = true;
+  makePortalPair(20,11,45,11);
+  makePortalPair(20,10,45,10);
+  makePortalPair(20,9,45,9);
+  makePortalPair(20,9,45,9, false);
+  makePortalPair(21,9,46,9, false);
+  makePortalPair(22,9,47,9, false);
+  //board[20][8].wall = true;
 }
 
 int main()
@@ -310,8 +329,8 @@ void redirect(double start_x, double start_y, double& dx, double& dy)
     temp_start_y_int += y_steps_int[i];
   }
 
-  dx += temp_start_x_int - end_x;
-  dy += temp_start_y_int - end_y;
+  dx += temp_start_x_int - end_x_int;
+  dy += temp_start_y_int - end_y_int;
 }
 
 Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
@@ -340,22 +359,21 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
   // line casts do not include the first square, they do include the end.
   for(int step_num = 0; step_num < num_steps; step_num++)
   {
-    // TODO: Account for portals
     x += dx;
     y += dy;
 
-    int rounded_x = static_cast<double>(std::round(x));
-    int rounded_y = static_cast<double>(std::round(y));
+    int next_x_int = static_cast<int>(std::round(x));
+    int next_y_int = static_cast<int>(std::round(y));
 
-    if (!onBoard(rounded_x, rounded_y))
+    if (!onBoard(next_x_int, next_y_int))
     {
       break;
     }
 
     // If the line has entered a new square.
-    if (rounded_x != prev_square_x || rounded_y != prev_square_y)
+    if (next_x_int != prev_square_x || next_y_int != prev_square_y)
     {
-      Square square = board[rounded_x][rounded_y];
+      Square square = board[next_x_int][next_y_int];
       // Note: these will have to be rotated if going through a rotated portal
       double new_dx = dx;
       double new_dy = dy;
@@ -365,12 +383,12 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
       
       x_offset += portal_dx; 
       y_offset += portal_dy;
-      rounded_x += portal_dx;
-      rounded_y += portal_dy;
+      next_x_int += portal_dx;
+      next_y_int += portal_dy;
       x += portal_dx;
       y += portal_dy;
       
-      if (!onBoard(rounded_x, rounded_y))
+      if (!onBoard(next_x_int, next_y_int))
       {
         break;
       }
@@ -378,16 +396,16 @@ Line lineCast(int start_x, int start_y, int rel_x, int rel_y)
 
       SquareMap square_map;
 
-      square_map.board_x = rounded_x;
-      square_map.board_y = rounded_y;
+      square_map.board_x = next_x_int;
+      square_map.board_y = next_y_int;
 
-      square_map.line_x = (rounded_x - x_offset) - start_x;
-      square_map.line_y = (rounded_y - y_offset) - start_y;
+      square_map.line_x = (next_x_int - x_offset) - start_x;
+      square_map.line_y = (next_y_int - y_offset) - start_y;
 
       line.mappings.push_back(square_map);
 
-      prev_square_x = rounded_x;
-      prev_square_y = rounded_y;
+      prev_square_x = next_x_int;
+      prev_square_y = next_y_int;
     }
   }
 
@@ -444,9 +462,8 @@ void drawLine(Line line)
   }
 }
 
-void drawEverything()
+void drawSightMap()
 {
-  /*
   // Fill background
   for (int row = 0; row < num_rows; row++)
   {
@@ -494,7 +511,10 @@ void drawEverything()
         break;
     }
   }
-  */
+}
+
+void drawBoard()
+{
   // Draw all the floor and walls
   // For every square on the screen
   
@@ -530,9 +550,15 @@ void drawEverything()
 
   for(int i = 0; i < player_sight_lines.size(); i++)
   {
-    drawLine(player_sight_lines[i]);
+    //if (i%4 ==1)
+      drawLine(player_sight_lines[i]);
   }
-  
+}
+
+void drawEverything()
+{
+  //drawBoard();
+  drawSightMap();
 
   // move the cursor
   move(0,0);
