@@ -137,21 +137,35 @@ void rectToWall(int left, int bottom, int right, int top)
   }
 }
 
+void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
+{
+  board[x1][y1].wall = true;
+  board[x2][y2].wall = true;
+  board[x1+dx+1][y1+dy].wall = true;
+  board[x2+dx+1][y2+dy].wall = true;
+  for (int rx = 1; rx <= dx; rx++)
+  {
+    makePortalPair(x1+rx,y1,x2+rx,y2, false);
+  }
+
+}
 
 void initBoard()
 {
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
 
-  //board[20][13].wall = true;
+  board[45][13].wall = true;
+  board[20][13].wall = true;
   makePortalPair(20,12,45,12);
   makePortalPair(20,11,45,11);
   makePortalPair(20,10,45,10);
   makePortalPair(20,9,45,9);
-  makePortalPair(20,9,45,9, false);
-  makePortalPair(21,9,46,9, false);
-  makePortalPair(22,9,47,9, false);
-  //board[20][8].wall = true;
+  board[45][8].wall = true;
+  board[20][8].wall = true;
+
+  makeNicePortalPair(20, 20, 20, 30, 5, 0);
+
 }
 
 int main()
