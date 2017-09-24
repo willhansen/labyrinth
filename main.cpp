@@ -9,6 +9,7 @@
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
+const bool NAIVE_VIEW = false;
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -164,7 +165,7 @@ void initBoard()
   board[45][8].wall = true;
   board[20][8].wall = true;
 
-  makeNicePortalPair(20, 20, 20, 30, 5, 0);
+  makeNicePortalPair(20, 20, 20, 25, 5, 0);
 
 }
 
@@ -281,12 +282,6 @@ void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
   }
 }
 
-// given a small step, redirect it accordingly if it goes through portals
-// Assumes this step is less than 1 square long
-// Assumes this step crosses a square boundary
-void redirect(double start_x, double start_y, double& dx, double& dy)
-{
-}
 
 Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
 {
@@ -331,9 +326,6 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
       Square new_square = board[next_x_int][next_y_int];
       double new_dx = dx;
       double new_dy = dy;
-      // TODO:remove
-      redirect(x-dx, y-dy, new_dx, new_dy);
-
       /////////////////////////////////////////////////////////////////
       // Portals may be found on the bottom and left of any square
       // In the case of exact diagonal, go though the portal on the bottom of a square
@@ -377,44 +369,46 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
         }
       }
 
-      int temp_x_int = x_int;
-      int temp_y_int = y_int;
+      int temp_board_x_int = x_int;
+      int temp_board_y_int = y_int;
       for (int i=0; i < x_steps_int.size(); i++)
       {
-        orthogonalRedirect(temp_x_int, temp_y_int, x_steps_int[i], y_steps_int[i]);
-        temp_x_int += x_steps_int[i];
-        temp_y_int += y_steps_int[i];
+        int naive_board_dx_int = x_steps_int[i];
+        int naive_board_dy_int = y_steps_int[i];
+        orthogonalRedirect(temp_board_x_int, temp_board_y_int, x_steps_int[i], y_steps_int[i]);
+        int real_board_dx_int = x_steps_int[i];
+        int real_board_dy_int = y_steps_int[i];
+
+        temp_board_x_int += real_board_dx_int;
+        temp_board_y_int += real_board_dy_int;
+
+        ////////////////////////////////////////////////////////////////////////
+        int portal_dx = real_board_dx_int - naive_board_dx_int;
+        int portal_dy = real_board_dy_int - naive_board_dy_int;
+
+        x_offset += portal_dx; 
+        y_offset += portal_dy;
+        next_x_int += portal_dx;
+        next_y_int += portal_dy;
+        next_x += portal_dx;
+        next_y += portal_dy;
+
+        // If the portal has sent us off the board, stop
+        if (!onBoard(next_x_int, next_y_int))
+        {
+          break;
+        }
+
+        SquareMap square_map;
+
+        square_map.board_x = temp_board_x_int;
+        square_map.board_y = temp_board_y_int;
+
+        square_map.line_x = (temp_board_x_int - x_offset) - start_x_int;
+        square_map.line_y = (temp_board_y_int - y_offset) - start_y_int;
+
+        line.mappings.push_back(square_map);
       }
-
-      new_dx += temp_x_int - next_x_int;
-      new_dy += temp_y_int - next_y_int;
-      ////////////////////////////////////////////////////////////////////////
-      int portal_dx = static_cast<int>(std::round(new_dx - dx));
-      int portal_dy = static_cast<int>(std::round(new_dy - dy));
-      
-      x_offset += portal_dx; 
-      y_offset += portal_dy;
-      next_x_int += portal_dx;
-      next_y_int += portal_dy;
-      next_x += portal_dx;
-      next_y += portal_dy;
-      
-      // If the portal has sent us off the board, stop
-      if (!onBoard(next_x_int, next_y_int))
-      {
-        break;
-      }
-
-
-      SquareMap square_map;
-
-      square_map.board_x = next_x_int;
-      square_map.board_y = next_y_int;
-
-      square_map.line_x = (next_x_int - x_offset) - start_x_int;
-      square_map.line_y = (next_y_int - y_offset) - start_y_int;
-
-      line.mappings.push_back(square_map);
 
       x_int = next_x_int;
       y_int = next_y_int;
@@ -571,8 +565,14 @@ void drawBoard()
 
 void drawEverything()
 {
-  //drawBoard();
-  drawSightMap();
+  if (NAIVE_VIEW)
+  {
+    drawBoard();
+  }
+  else
+  {
+    drawSightMap();
+  }
 
   // move the cursor
   move(0,0);
