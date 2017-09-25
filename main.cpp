@@ -16,10 +16,10 @@ const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 
+const int BACKGROUND_COLOR = BLACK_ON_WHITE;
+const char OUT_OF_VIEW = ' ';
 //const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 //const char OUT_OF_VIEW = '.';
-const int BACKGROUND_COLOR = WHITE_ON_BLACK;
-const char OUT_OF_VIEW = '.';
 
 const char FLOOR = ' ';
 
@@ -238,21 +238,23 @@ void updateSightLines()
   
   std::vector<int> rel_x;
   std::vector<int> rel_y;
-  // The diagonals
+
+  // The orthogonals
+  
   rel_x.push_back(SIGHT_RADIUS);
+  rel_y.push_back(0);
+
+  rel_x.push_back(0);
   rel_y.push_back(SIGHT_RADIUS);
 
   rel_x.push_back(-SIGHT_RADIUS);
-  rel_y.push_back(SIGHT_RADIUS);
+  rel_y.push_back(0);
 
-  rel_x.push_back(SIGHT_RADIUS);
-  rel_y.push_back(-SIGHT_RADIUS);
-
-  rel_x.push_back(-SIGHT_RADIUS);
+  rel_x.push_back(0);
   rel_y.push_back(-SIGHT_RADIUS);
 
   // All the non-diagonals and non-orthogonals, moving from diagonal to orthogonal
-  for(int i = SIGHT_RADIUS-1; i > 0; i--)
+  for(int i = 1; i < SIGHT_RADIUS; i++)
   {
     // all 8 octants
     rel_x.push_back(SIGHT_RADIUS);
@@ -279,18 +281,17 @@ void updateSightLines()
     rel_x.push_back(SIGHT_RADIUS);
     rel_y.push_back(-i);
   }
-  // The orthogonals
-  
+  // The diagonals
   rel_x.push_back(SIGHT_RADIUS);
-  rel_y.push_back(0);
-
-  rel_x.push_back(0);
   rel_y.push_back(SIGHT_RADIUS);
 
   rel_x.push_back(-SIGHT_RADIUS);
-  rel_y.push_back(0);
+  rel_y.push_back(SIGHT_RADIUS);
 
-  rel_x.push_back(0);
+  rel_x.push_back(SIGHT_RADIUS);
+  rel_y.push_back(-SIGHT_RADIUS);
+
+  rel_x.push_back(-SIGHT_RADIUS);
   rel_y.push_back(-SIGHT_RADIUS);
   /*
   // all the relative positions in a square around (0,0)
@@ -337,7 +338,6 @@ void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
   // X step
   if (std::abs(start_x - end_x) > 0)
   {
-    int small_x = std::min(start_x, end_x);
     int big_x = std::max(start_x, end_x);
     int y = start_y;
     // only bigger number square could have a portal for this transition 
@@ -350,7 +350,6 @@ void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
   // Y step
   else
   {
-    int small_y = std::min(start_y, end_y);
     int big_y = std::max(start_y, end_y);
     int x = start_x;
     // only bigger number square could have a portal for this transition 
@@ -404,8 +403,6 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
     if (next_x_int != x_int || next_y_int != y_int)
     {
       Square new_square = board[next_x_int][next_y_int];
-      double new_dx = dx;
-      double new_dy = dy;
       /////////////////////////////////////////////////////////////////
       // Portals may be found on the bottom and left of any square
       // In the case of exact diagonal, go though the portal on the bottom of a square
@@ -427,7 +424,6 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
         double step_slope = (next_y - y)/(next_x - x);
         double y_at_x_division = y + step_slope * (x_division - x);
 
-        int mid_x_int, mid_y_int; // for the intermediate step
         // This line decides diagonal tie breaks
         if ((next_y > y && y_at_x_division < y_division) || (next_y < y && y_at_x_division > y_division))
         {
