@@ -6,6 +6,7 @@
 #include <ncurses.h>			/* ncurses.h includes stdio.h */  
 #include <string.h> 
 #include <vector>
+#include <utility>
 #include <cmath>
 
 const int BOARD_SIZE = 100;
@@ -16,16 +17,16 @@ const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 
-const int BACKGROUND_COLOR = BLACK_ON_WHITE;
-const char OUT_OF_VIEW = ' ';
-//const int BACKGROUND_COLOR = WHITE_ON_BLACK;
-//const char OUT_OF_VIEW = '.';
+//const int BACKGROUND_COLOR = BLACK_ON_WHITE;
+//const char OUT_OF_VIEW = ' ';
+const int BACKGROUND_COLOR = WHITE_ON_BLACK;
+const char OUT_OF_VIEW = '.';
 
 const char FLOOR = ' ';
 
 void drawEverything();
 void updateSightLines();
-Line lineCast(int start_x, int start_y, int d_x, int d_y);
+Line lineCast(int start_x, int start_y, int d_x, int d_y, bool is_sight_line=true);
 void initNCurses();
 
 //TODO: make these non-global
@@ -175,8 +176,9 @@ void initBoard()
   board[20][8].wall = true;
   */
 
-  board[1][11].wall = false;
-  makePortalPair(1, 11, 30, 11);
+  makePortalPair(10, 12, 20, 12);
+  makePortalPair(10, 11, 20, 11);
+  makePortalPair(10, 10, 20, 10);
 
   makeNicePortalPair(20, 20, 20, 30, 7, 0);
 
@@ -326,12 +328,15 @@ void updateSightLines()
   // Find the sight lines in this order
   for(int i = 0; i < static_cast<int>(rel_x.size()); i++)
   {
-    player_sight_lines.push_back(lineCast(player_x, player_y, rel_x[i], rel_y[i]));
+    bool is_sight_line = true;
+    Line new_sightline = lineCast(player_x, player_y, rel_x[i], rel_y[i], is_sight_line);
+
+    player_sight_lines.push_back(new_sightline);
   }
 }
 
 // Redirect an orthogonal step between adjacent squares.
-void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
+void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy, int& new_rotation)
 {
   int end_x = start_x + dx;
   int end_y = start_y + dy;
@@ -345,6 +350,7 @@ void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
     {
       dx += board[big_x][y].left_portal->new_x - big_x;
       dy += board[big_x][y].left_portal->new_y - y;
+      new_rotation = board[big_x][y].left_portal->rotation;
     }
   }
   // Y step
@@ -357,20 +363,24 @@ void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy)
     {
       dx += board[x][big_y].down_portal->new_x - x;
       dy += board[x][big_y].down_portal->new_y - big_y;
+      new_rotation = board[x][big_y].down_portal->rotation;
     }
   }
 }
 
 
-Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
+Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int, bool is_sight_line)
 {
   Line line;
 
   // For now, linecast with a bresneham equivalent method.
   const int num_steps = std::max(std::abs(rel_x_int), std::abs(rel_y_int));
 
-  double dx = static_cast<double>(rel_x_int)/static_cast<double>(num_steps);
-  double dy = static_cast<double>(rel_y_int)/static_cast<double>(num_steps);
+  // the real dx and dy will get rotated and flipped as they go through portals and mirrors, the naive ones think they are going in a straight line.
+  double real_dx = static_cast<double>(rel_x_int)/static_cast<double>(num_steps);
+  double real_dy = static_cast<double>(rel_y_int)/static_cast<double>(num_steps);
+  double naive_dx = real_dx;
+  double naive_dy = real_dy;
 
   // These represent how much the line has been teleported when going through a portal.
   // Take the real position, subtract the translation offset, then the rotation offset, and you have the line position.
@@ -386,10 +396,11 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
 
   // Rounding to integer coordinates is done with truncation.
   // line casts do not include the first square, they do include the end.
+  bool doublebreak = false;
   for(int step_num = 0; step_num < num_steps; step_num++)
   {
-    double next_x = x + dx;
-    double next_y = y + dy;
+    double next_x = x + real_dx;
+    double next_y = y + real_dy;
     int next_x_int = static_cast<int>(std::round(next_x));
     int next_y_int = static_cast<int>(std::round(next_y));
 
@@ -451,7 +462,8 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
       {
         int naive_board_dx_int = x_steps_int[i];
         int naive_board_dy_int = y_steps_int[i];
-        orthogonalRedirect(temp_board_x_int, temp_board_y_int, x_steps_int[i], y_steps_int[i]);
+        int new_rotation = 0;
+        orthogonalRedirect(temp_board_x_int, temp_board_y_int, x_steps_int[i], y_steps_int[i], new_rotation);
         int real_board_dx_int = x_steps_int[i];
         int real_board_dy_int = y_steps_int[i];
 
@@ -480,11 +492,32 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int)
         square_map.board_x = temp_board_x_int;
         square_map.board_y = temp_board_y_int;
 
-        square_map.line_x = (temp_board_x_int - x_offset) - start_x_int;
-        square_map.line_y = (temp_board_y_int - y_offset) - start_y_int;
+        int line_x = (temp_board_x_int - x_offset) - start_x_int;
+        int line_y = (temp_board_y_int - y_offset) - start_y_int;
+        square_map.line_x = line_x;
+        square_map.line_y = line_y;
 
         line.mappings.push_back(square_map);
+
+        // sight lines don't need to go past the first block
+        if (is_sight_line)
+        {
+          // if there is a mote here, it wants to go to the source of the sight line
+          if (board[next_x_int][next_y_int].mote != nullptr)
+          {
+            board[next_x_int][next_y_int].mote->goal_x = line.mappings[0].line_x - line_x;
+            board[next_x_int][next_y_int].mote->goal_y = line.mappings[0].line_y - line_y;
+          }
+
+          if (board[next_x_int][next_y_int].wall == true)
+          {
+            doublebreak = true;
+            break;
+          }
+        }
       }
+      if (doublebreak)
+        break;
 
       x_int = next_x_int;
       y_int = next_y_int;

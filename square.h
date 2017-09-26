@@ -2,7 +2,11 @@
 #define SQUARE_H
 
 #include "portal.h"
+#include "line.h"
+#include "mote.h"
+#include <utility>
 #include <memory>
+#include <list>
 
 // The board is a 2d array of squares.  Each square can have a portal and/or a block.  Entities are tracked separately for the time being.
 struct Square
@@ -10,6 +14,7 @@ struct Square
   bool wall = false;
   std::shared_ptr<Portal> down_portal;
   std::shared_ptr<Portal> left_portal;
+  std::shared_ptr<Mote> mote;
 };
 
 #endif
