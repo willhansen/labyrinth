@@ -55,8 +55,8 @@ struct vect2Di
 
   void operator+= (vect2Di b)
   {
-    this->x=b.x;
-    this->y=b.y;
+    this->x=b.x+this->x;
+    this->y=b.y+this->y;
   }
 
 };

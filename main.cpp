@@ -12,7 +12,7 @@
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
-const bool NAIVE_VIEW = true;
+const bool NAIVE_VIEW = false;
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
