@@ -64,6 +64,52 @@ void attemptMove(vect2Di dp)
   }
 }
 
+std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
+{
+  // this line starts at zero
+  // ties are broken towards y=+/-inf
+  std::vector<vect2Di> output;
+  // include the first step
+  const int num_steps = std::max(std::abs(goal_pos.x), std::abs(goal_pos.y)) + 1;
+  vect2Di pos;
+  double x=0;
+  double y=0;
+  double dx = static_cast<double>(goal_pos.x)/static_cast<double>(num_steps);
+  double dy = static_cast<double>(goal_pos.y)/static_cast<double>(num_steps);
+  output.push_back(pos);
+  for (int step_num = 1; step_num < num_steps; step_num++)
+  {
+    // every step will enter a new square.  The question is: was it a diagonal step?
+    double next_x = x+dx;
+    double next_y = y+dy;
+    vect2Di next_pos = vect2Di(static_cast<int>(std::round(next_x)), static_cast<int>(std::round(next_y)));
+    // if diagonal step, there is another square before the next_pos square
+    if (std::abs(next_pos.x - pos.x) + std::abs(next_pos.y - pos.y) > 1)
+    {
+      // need to find which orthogonal square this went through, If a tie, pick the vertical
+      double y_division = std::round(std::min(y, next_y)) + 0.5;
+      double x_division = std::round(std::min(x, next_x)) + 0.5;
+      double step_slope = (next_y - y)/(next_x - x);
+      double y_at_x_division = y + step_slope * (x_division - x);
+
+      // This line decides diagonal tie breaks
+      // If the intermediate step is horizontal first
+      if ((next_y > y && y_at_x_division < y_division) || (next_y < y && y_at_x_division > y_division))
+      {
+        output.push_back(vect2Di(next_pos.x, pos.y));
+      }
+      else
+      {
+        output.push_back(vect2Di(pos.x, next_pos.y));
+      }
+
+    }
+    output.push_back(next_pos);
+    x = next_x;
+    y = next_y;
+  }
+}
+
 void screenToBoard(int row, int col, vect2Di& pos)
 {
   // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
