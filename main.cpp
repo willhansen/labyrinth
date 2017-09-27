@@ -2,6 +2,7 @@
 #include "line.h"
 #include "portal.h"
 #include "mote.h"
+#include "geometry.h"
 
 #include <ncurses.h>			/* ncurses.h includes stdio.h */  
 #include <string.h> 
@@ -11,7 +12,7 @@
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
-const bool NAIVE_VIEW = false;
+const bool NAIVE_VIEW = true;
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -26,22 +27,23 @@ const char FLOOR = ' ';
 
 void drawEverything();
 void updateSightLines();
-Line lineCast(int start_x, int start_y, int d_x, int d_y, bool is_sight_line=true);
+Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=true);
 void initNCurses();
 
 //TODO: make these non-global
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
-int player_x;
-int player_y;
+vect2Di player_pos;
+mat2Di player_transform;
 int mouse_x, mouse_y;
+vect2Di mouse_pos;
 
 int num_rows,num_cols;				/* to store the number of rows and */
 
-bool onBoard(int x, int y)
+bool onBoard(vect2Di p)
 {
-  return (x>=0 && y>=0 && x<BOARD_SIZE && y<BOARD_SIZE);
+  return (p.x>=0 && p.y>=0 && p.x<BOARD_SIZE && p.y<BOARD_SIZE);
 }
 
 bool onScreen(int row, int col)
@@ -49,68 +51,62 @@ bool onScreen(int row, int col)
   return (row>=0 && col>=0 && row<num_rows && col<num_cols);
 }
 
-void attemptMove(int dx, int dy)
+void attemptMove(vect2Di dp)
 {
-  Line line = lineCast(player_x, player_y, dx, dy);
+  Line line = lineCast(player_pos, dp);
   if (line.mappings.size() > 0)
   {
-    int x = line.mappings[0].board_x;
-    int y = line.mappings[0].board_y;
-    if (board[x][y].wall == false)
+    vect2Di pos = line.mappings[0].board_pos;
+    if (board[pos.x][pos.y].wall == false)
     {
-      player_x = x;
-      player_y = y;
+      player_pos = pos;
     }
   }
 }
 
-void screenToBoard(int row, int col, int& x, int& y)
+void screenToBoard(int row, int col, vect2Di& pos)
 {
   // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
   // The screen is (y, x) in the fourth quadrant (but y is positive)
-  x = player_x - num_cols/2 + col;
-  y = player_y + num_rows/2 - row;
+  pos.x = player_pos.x - num_cols/2 + col;
+  pos.y = player_pos.y + num_rows/2 - row;
   return;
 }
 
 // Sight map positions are relative to its center
 // Screen positions are relative to top left
-void sightMapToScreen(int x, int y, int& row, int& col)
+void sightMapToScreen(vect2Di pos, int& row, int& col)
 {
-  row = num_rows/2 - y;
-  col = x + num_cols/2;
+  row = num_rows/2 - pos.y;
+  col = pos.x + num_cols/2;
 }
 
 // This gives board to screen coordinates, player is at center, PORTALS ARE IGNORED
-void naiveBoardToScreen(int x, int y, int& row, int& col)
+void naiveBoardToScreen(vect2Di pos, int& row, int& col)
 {
-  row = player_y + num_rows/2 - y;
-  col = x - player_x + num_cols/2;
+  row = player_pos.y + num_rows/2 - pos.y;
+  col = pos.x - player_pos.x + num_cols/2;
 }
 
-void makePortalPair(int x1, int y1, int x2, int y2, bool left=true)
+void makePortalPair(vect2Di p1, vect2Di p2, bool left=true)
 {
-  if (!onBoard(x1, y1) || !onBoard(x2, y2))
+  if (!onBoard(p1) || !onBoard(p2))
     return;
   if (left)
   {
-    board[x1][y1].left_portal.reset(new Portal());
-    board[x1][y1].left_portal->new_x = x2;
-    board[x1][y1].left_portal->new_y = y2;
+    board[p1.x][p1.y].left_portal.reset(new Portal());
+    board[p1.x][p1.y].left_portal->new_pos = p2;
 
-    board[x2][y2].left_portal.reset(new Portal());
-    board[x2][y2].left_portal->new_x = x1;
-    board[x2][y2].left_portal->new_y = y1;
+    board[p2.x][p2.y].left_portal.reset(new Portal());
+    board[p2.x][p2.y].left_portal->new_pos = p1;
   }
   else
   {
-    board[x1][y1].down_portal.reset(new Portal());
-    board[x1][y1].down_portal->new_x = x2;
-    board[x1][y1].down_portal->new_y = y2;
+    board[p1.x][p1.y].down_portal.reset(new Portal());
+    board[p1.x][p1.y].down_portal->new_pos = p2;
 
-    board[x2][y2].down_portal.reset(new Portal());
-    board[x2][y2].down_portal->new_x = x1;
-    board[x2][y2].down_portal->new_y = y1;
+    board[p2.x][p2.y].down_portal.reset(new Portal());
+    board[p2.x][p2.y].down_portal->new_pos = p1;
   }
 }
 
@@ -152,15 +148,14 @@ void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
   board[x2+dx+1][y2+dy].wall = true;
   for (int rx = 1; rx <= dx; rx++)
   {
-    makePortalPair(x1+rx,y1,x2+rx,y2, false);
+    makePortalPair(vect2Di(x1+rx,y1),vect2Di(x2+rx,y2), false);
   }
 
 }
 
 void initBoard()
 {
-  player_x = 1;
-  player_y = 1;
+  player_pos = vect2Di(5, 5);
   
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
@@ -176,9 +171,9 @@ void initBoard()
   board[20][8].wall = true;
   */
 
-  makePortalPair(10, 12, 20, 12);
-  makePortalPair(10, 11, 20, 11);
-  makePortalPair(10, 10, 20, 10);
+  makePortalPair(vect2Di(10, 12), vect2Di(20, 12));
+  makePortalPair(vect2Di(10, 11), vect2Di(20, 11));
+  makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
 
   makeNicePortalPair(20, 20, 20, 30, 7, 0);
 
@@ -207,21 +202,21 @@ int main()
     if (in == 'q')
       break;
     else if (in == 'h')
-      attemptMove(-1, 0);
+      attemptMove(vect2Di(-1, 0));
     else if (in == 'j')
-      attemptMove(0, -1);
+      attemptMove(vect2Di(0, -1));
     else if (in == 'k')
-      attemptMove(0, 1);
+      attemptMove(vect2Di(0, 1));
     else if (in == 'l')
-      attemptMove(1, 0);
+      attemptMove(vect2Di(1, 0));
     else if (in == 'y')
-      attemptMove(-1, 1);
+      attemptMove(vect2Di(-1, 1));
     else if (in == 'u')
-      attemptMove(1, 1);
+      attemptMove(vect2Di(1, 1));
     else if (in == 'b')
-      attemptMove(-1, -1);
+      attemptMove(vect2Di(-1, -1));
     else if (in == 'n')
-      attemptMove(1, -1);
+      attemptMove(vect2Di(1, -1));
 
     // Tick everything
     updateSightLines();
@@ -238,161 +233,100 @@ void updateSightLines()
 {
   // the order these are updated is essentially bottom to top in terms of draw order
   
-  std::vector<int> rel_x;
-  std::vector<int> rel_y;
+  std::vector<vect2Di> rel_p;
 
   // The orthogonals
   
-  rel_x.push_back(SIGHT_RADIUS);
-  rel_y.push_back(0);
+  rel_p.push_back(vect2Di(SIGHT_RADIUS, 0));
 
-  rel_x.push_back(0);
-  rel_y.push_back(SIGHT_RADIUS);
+  rel_p.push_back(vect2Di(0, SIGHT_RADIUS));
 
-  rel_x.push_back(-SIGHT_RADIUS);
-  rel_y.push_back(0);
+  rel_p.push_back(vect2Di(-SIGHT_RADIUS, 0));
 
-  rel_x.push_back(0);
-  rel_y.push_back(-SIGHT_RADIUS);
+  rel_p.push_back(vect2Di(0, -SIGHT_RADIUS));
 
   // All the non-diagonals and non-orthogonals, moving from diagonal to orthogonal
   for(int i = 1; i < SIGHT_RADIUS; i++)
   {
     // all 8 octants
-    rel_x.push_back(SIGHT_RADIUS);
-    rel_y.push_back(i);
-
-    rel_x.push_back(i);
-    rel_y.push_back(SIGHT_RADIUS);
-
-    rel_x.push_back(-i);
-    rel_y.push_back(SIGHT_RADIUS);
-
-    rel_x.push_back(-SIGHT_RADIUS);
-    rel_y.push_back(i);
-
-    rel_x.push_back(-SIGHT_RADIUS);
-    rel_y.push_back(-i);
-
-    rel_x.push_back(-i);
-    rel_y.push_back(-SIGHT_RADIUS);
-
-    rel_x.push_back(i);
-    rel_y.push_back(-SIGHT_RADIUS);
-
-    rel_x.push_back(SIGHT_RADIUS);
-    rel_y.push_back(-i);
+    rel_p.push_back(vect2Di(SIGHT_RADIUS, i));
+    rel_p.push_back(vect2Di(i, SIGHT_RADIUS));
+    rel_p.push_back(vect2Di(-i, SIGHT_RADIUS));
+    rel_p.push_back(vect2Di(-SIGHT_RADIUS, i));
+    rel_p.push_back(vect2Di(-SIGHT_RADIUS, -i));
+    rel_p.push_back(vect2Di(-i, -SIGHT_RADIUS));
+    rel_p.push_back(vect2Di(i, -SIGHT_RADIUS));
+    rel_p.push_back(vect2Di(SIGHT_RADIUS, -i));
   }
   // The diagonals
-  rel_x.push_back(SIGHT_RADIUS);
-  rel_y.push_back(SIGHT_RADIUS);
-
-  rel_x.push_back(-SIGHT_RADIUS);
-  rel_y.push_back(SIGHT_RADIUS);
-
-  rel_x.push_back(SIGHT_RADIUS);
-  rel_y.push_back(-SIGHT_RADIUS);
-
-  rel_x.push_back(-SIGHT_RADIUS);
-  rel_y.push_back(-SIGHT_RADIUS);
-  /*
-  // all the relative positions in a square around (0,0)
-  for(int y = 0; y <= SIGHT_RADIUS; y++)
-  {
-    rel_x.push_back(SIGHT_RADIUS);
-    rel_y.push_back(y);
-  }
-  for(int x = SIGHT_RADIUS-1; x >= -SIGHT_RADIUS; x--)
-  {
-    rel_x.push_back(x);
-    rel_y.push_back(SIGHT_RADIUS);
-  }
-  for(int y = SIGHT_RADIUS-1; y >= -SIGHT_RADIUS; y--)
-  {
-    rel_x.push_back(-SIGHT_RADIUS);
-    rel_y.push_back(y);
-  }
-  for(int x = -SIGHT_RADIUS+1; x <= SIGHT_RADIUS; x++)
-  {
-    rel_x.push_back(x);
-    rel_y.push_back(-SIGHT_RADIUS);
-  }
-  for(int y = -SIGHT_RADIUS+1; y < 0; y++)
-  {
-    rel_x.push_back(SIGHT_RADIUS);
-    rel_y.push_back(y);
-  }
-  */
+  rel_p.push_back(vect2Di(SIGHT_RADIUS, SIGHT_RADIUS));
+  rel_p.push_back(vect2Di(-SIGHT_RADIUS, SIGHT_RADIUS));
+  rel_p.push_back(vect2Di(SIGHT_RADIUS, -SIGHT_RADIUS));
+  rel_p.push_back(vect2Di(-SIGHT_RADIUS, -SIGHT_RADIUS));
 
   player_sight_lines.clear();
   // Find the sight lines in this order
-  for(int i = 0; i < static_cast<int>(rel_x.size()); i++)
+  for(int i = 0; i < static_cast<int>(rel_p.size()); i++)
   {
     bool is_sight_line = true;
-    Line new_sightline = lineCast(player_x, player_y, rel_x[i], rel_y[i], is_sight_line);
+    Line new_sightline = lineCast(player_pos, rel_p[i], is_sight_line);
 
     player_sight_lines.push_back(new_sightline);
   }
 }
 
 // Redirect an orthogonal step between adjacent squares.
-void orthogonalRedirect(int start_x, int start_y, int& dx, int& dy, int& new_rotation)
+void orthogonalRedirect(vect2Di start_pos, vect2Di& dp)
 {
-  int end_x = start_x + dx;
-  int end_y = start_y + dy;
+  vect2Di end_pos = start_pos + dp;
   // X step
-  if (std::abs(start_x - end_x) > 0)
+  if (std::abs(start_pos.x - end_pos.x) > 0)
   {
-    int big_x = std::max(start_x, end_x);
-    int y = start_y;
+    int big_x = std::max(start_pos.x, end_pos.x);
+    int y = start_pos.y;
     // only bigger number square could have a portal for this transition 
-    if (onBoard(big_x, y) && board[big_x][y].left_portal != nullptr)
+    if (onBoard(vect2Di(big_x, y)) && board[big_x][y].left_portal != nullptr)
     {
-      dx += board[big_x][y].left_portal->new_x - big_x;
-      dy += board[big_x][y].left_portal->new_y - y;
-      new_rotation = board[big_x][y].left_portal->rotation;
+      dp.x += board[big_x][y].left_portal->new_pos.x - big_x;
+      dp.y += board[big_x][y].left_portal->new_pos.y - y;
     }
   }
   // Y step
   else
   {
-    int big_y = std::max(start_y, end_y);
-    int x = start_x;
+    int big_y = std::max(start_pos.y, end_pos.y);
+    int x = start_pos.x;
     // only bigger number square could have a portal for this transition 
-    if (onBoard(x, big_y) && board[x][big_y].down_portal != nullptr)
+    if (onBoard(vect2Di(x, big_y)) && board[x][big_y].down_portal != nullptr)
     {
-      dx += board[x][big_y].down_portal->new_x - x;
-      dy += board[x][big_y].down_portal->new_y - big_y;
-      new_rotation = board[x][big_y].down_portal->rotation;
+      dp.x += board[x][big_y].down_portal->new_pos.x - x;
+      dp.y += board[x][big_y].down_portal->new_pos.y - big_y;
     }
   }
 }
 
 
-Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int, bool is_sight_line)
+Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
 {
   Line line;
 
   // For now, linecast with a bresneham equivalent method.
-  const int num_steps = std::max(std::abs(rel_x_int), std::abs(rel_y_int));
+  const int num_steps = std::max(std::abs(rel_pos.x), std::abs(rel_pos.y));
 
   // the real dx and dy will get rotated and flipped as they go through portals and mirrors, the naive ones think they are going in a straight line.
-  double real_dx = static_cast<double>(rel_x_int)/static_cast<double>(num_steps);
-  double real_dy = static_cast<double>(rel_y_int)/static_cast<double>(num_steps);
+  double real_dx = static_cast<double>(rel_pos.x)/static_cast<double>(num_steps);
+  double real_dy = static_cast<double>(rel_pos.y)/static_cast<double>(num_steps);
   double naive_dx = real_dx;
   double naive_dy = real_dy;
 
   // These represent how much the line has been teleported when going through a portal.
   // Take the real position, subtract the translation offset, then the rotation offset, and you have the line position.
-  int x_offset = 0;
-  int y_offset = 0;
-  int rotation_offset = 0;
+  vect2Di offset;
 
-  int x_int = start_x_int;
-  int y_int = start_y_int;
+  vect2Di pos = start_pos;
 
-  double x = start_x_int;
-  double y = start_y_int;
+  double x = start_pos.x;
+  double y = start_pos.y;
 
   // Rounding to integer coordinates is done with truncation.
   // line casts do not include the first square, they do include the end.
@@ -401,30 +335,27 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int, bo
   {
     double next_x = x + real_dx;
     double next_y = y + real_dy;
-    int next_x_int = static_cast<int>(std::round(next_x));
-    int next_y_int = static_cast<int>(std::round(next_y));
+    vect2Di next_pos = vect2Di(static_cast<int>(std::round(next_x)), static_cast<int>(std::round(next_y)));
 
     // don't cast off the board
-    if (!onBoard(next_x_int, next_y_int))
+    if (!onBoard(next_pos))
     {
       break;
     }
 
     // If the line has entered a new square.
-    if (next_x_int != x_int || next_y_int != y_int)
+    if (next_pos != pos)
     {
-      Square new_square = board[next_x_int][next_y_int];
+      Square new_square = board[next_pos.x][next_pos.y];
       /////////////////////////////////////////////////////////////////
       // Portals may be found on the bottom and left of any square
       // In the case of exact diagonal, go though the portal on the bottom of a square
 
-      std::vector<int> x_steps_int;
-      std::vector<int> y_steps_int;
+      std::vector<vect2Di> steps;
       // if only orthogonal step
-      if (std::abs(next_x_int - x_int) + std::abs(next_y_int - y_int) < 2)
+      if (std::abs(next_pos.x - pos.x) + std::abs(next_pos.y - pos.y) < 2)
       {
-        x_steps_int.push_back(next_x_int - x_int);
-        y_steps_int.push_back(next_y_int - y_int);
+        steps.push_back(next_pos - pos);
       }
       // if diagonal step
       else
@@ -439,63 +370,47 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int, bo
         if ((next_y > y && y_at_x_division < y_division) || (next_y < y && y_at_x_division > y_division))
         {
           // Horizontal then vertical
-          x_steps_int.push_back(next_x_int - x_int);
-          y_steps_int.push_back(0);
+          steps.push_back(vect2Di(next_pos.x - pos.x, 0));
 
-          x_steps_int.push_back(0);
-          y_steps_int.push_back(next_y_int - y_int);
+          steps.push_back(vect2Di(0, next_pos.y - pos.y));
         }
         else
         {
           // vertical then horizontal
-          x_steps_int.push_back(0);
-          y_steps_int.push_back(next_y_int - y_int);
+          steps.push_back(vect2Di(0, next_pos.y - pos.y));
 
-          x_steps_int.push_back(next_x_int - x_int);
-          y_steps_int.push_back(0);
+          steps.push_back(vect2Di(next_pos.x - pos.x, 0));
         }
       }
 
-      int temp_board_x_int = x_int;
-      int temp_board_y_int = y_int;
-      for (int i=0; i < x_steps_int.size(); i++)
+      vect2Di temp_board_pos = pos;
+      for (int i=0; i < steps.size(); i++)
       {
-        int naive_board_dx_int = x_steps_int[i];
-        int naive_board_dy_int = y_steps_int[i];
-        int new_rotation = 0;
-        orthogonalRedirect(temp_board_x_int, temp_board_y_int, x_steps_int[i], y_steps_int[i], new_rotation);
-        int real_board_dx_int = x_steps_int[i];
-        int real_board_dy_int = y_steps_int[i];
+        vect2Di naive_board_step = steps[i];
+        orthogonalRedirect(temp_board_pos, steps[i]);
+        vect2Di real_board_step = steps[i];
 
-        temp_board_x_int += real_board_dx_int;
-        temp_board_y_int += real_board_dy_int;
+        temp_board_pos += real_board_step;
 
-        ////////////////////////////////////////////////////////////////////////
-        int portal_dx = real_board_dx_int - naive_board_dx_int;
-        int portal_dy = real_board_dy_int - naive_board_dy_int;
+        vect2Di portal_dp = real_board_step - naive_board_step;
 
-        x_offset += portal_dx; 
-        y_offset += portal_dy;
-        next_x_int += portal_dx;
-        next_y_int += portal_dy;
-        next_x += portal_dx;
-        next_y += portal_dy;
+        offset += portal_dp; 
+        next_pos += portal_dp;
+        next_x += portal_dp.x;
+        next_y += portal_dp.y;
 
         // If the portal has sent us off the board, stop
-        if (!onBoard(next_x_int, next_y_int))
+        if (!onBoard(next_pos))
         {
           break;
         }
 
         SquareMap square_map;
 
-        square_map.board_x = temp_board_x_int;
-        square_map.board_y = temp_board_y_int;
+        square_map.board_pos = temp_board_pos;
 
-        int line_x = (temp_board_x_int - x_offset) - start_x_int;
-        int line_y = (temp_board_y_int - y_offset) - start_y_int;
-        square_map.line_x = line_x;
-        square_map.line_y = line_y;
+        vect2Di line_pos = (temp_board_pos - offset) - start_pos;
+        square_map.line_pos = line_pos;
 
         line.mappings.push_back(square_map);
 
@@ -503,13 +418,12 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int, bo
         if (is_sight_line)
         {
           // if there is a mote here, it wants to go to the source of the sight line
-          if (board[next_x_int][next_y_int].mote != nullptr)
+          if (board[next_pos.x][next_pos.y].mote != nullptr)
           {
-            board[next_x_int][next_y_int].mote->goal_x = line.mappings[0].line_x - line_x;
-            board[next_x_int][next_y_int].mote->goal_y = line.mappings[0].line_y - line_y;
+            board[next_pos.x][next_pos.y].mote->rel_player_pos = line.mappings[0].line_pos - line_pos;
           }
 
-          if (board[next_x_int][next_y_int].wall == true)
+          if (board[next_pos.x][next_pos.y].wall == true)
           {
             doublebreak = true;
             break;
@@ -519,8 +433,7 @@ Line lineCast(int start_x_int, int start_y_int, int rel_x_int, int rel_y_int, bo
       if (doublebreak)
         break;
 
-      x_int = next_x_int;
-      y_int = next_y_int;
+      pos = next_pos;
       x = next_x;
       y = next_y;
     }
@@ -533,33 +446,28 @@ void drawLine(Line line)
 {
   for (int i = 0; i < line.mappings.size(); i++)
   {
-    int bx = line.mappings[i].board_x;
-    int by = line.mappings[i].board_y;
-    int lx = line.mappings[i].line_x;
-    int ly = line.mappings[i].line_y;
-    int prev_lx, prev_ly;
+    vect2Di board_pos = line.mappings[i].board_pos;
+    vect2Di line_pos = line.mappings[i].line_pos;
+    vect2Di prev_line_pos;
     if (i != 0)
     {
-      prev_lx = line.mappings[i-1].line_x;
-      prev_ly = line.mappings[i-1].line_y;
+      prev_line_pos = line.mappings[i-1].line_pos;
     }
     else
     {
-      prev_lx = 0;
-      prev_ly = 0;
+      prev_line_pos = vect2Di(0, 0);
     }
     int row, col;
-    naiveBoardToScreen(bx, by, row, col);
+    naiveBoardToScreen(board_pos, row, col);
     if(onScreen(row, col))
     {
       char glyph;
-      int dx = lx - prev_lx;
-      int dy = ly - prev_ly;
-      if (dx == 0)
+      vect2Di dpos = line_pos - prev_line_pos;
+      if (dpos.x == 0)
         glyph = '|';
       else 
       {
-        double slope = static_cast<double>(dy)/static_cast<double>(dx);
+        double slope = static_cast<double>(dpos.y)/static_cast<double>(dpos.x);
         if (slope > 2)
           glyph = '|';
         else if (slope > 1.0/2.0)
@@ -593,7 +501,7 @@ void drawSightMap()
   attroff(COLOR_PAIR(BACKGROUND_COLOR));
   // Draw the player at the center of the sightmap
   int row, col;
-  sightMapToScreen(0, 0, row, col);
+  sightMapToScreen(vect2Di(0, 0), row, col);
   mvaddch(row, col, '@');
   
   // For every sight line
@@ -603,13 +511,13 @@ void drawSightMap()
     for(int square_num = 0; square_num < line.mappings.size(); square_num++)
     {
       SquareMap mapping = line.mappings[square_num];
-      Square board_square = board[mapping.board_x][mapping.board_y];
+      Square board_square = board[mapping.board_pos.x][mapping.board_pos.y];
       int row, col;
-      sightMapToScreen(mapping.line_x, mapping.line_y, row, col);
+      sightMapToScreen(mapping.line_pos, row, col);
       int color = WHITE_ON_BLACK;
       char glyph;
       // if player, show the player.
-      if (mapping.board_x == player_x && mapping.board_y == player_y)
+      if (mapping.board_pos == player_pos)
       {
         glyph = '@';
       }
@@ -641,13 +549,13 @@ void drawBoard()
   {
     for (int col = 0; col < num_cols; col++)
     {
-      int x, y;
-      screenToBoard(row, col, x, y);
+      vect2Di pos;
+      screenToBoard(row, col, pos);
       char glyph;
       int color = 0;
-      if (!onBoard(x, y))
+      if (!onBoard(pos))
         glyph = '.';
-      else if (board[x][y].wall == true)
+      else if (board[pos.x][pos.y].wall == true)
       {
         glyph = ' ';
         color = 2;
@@ -661,7 +569,7 @@ void drawBoard()
   }
   // Draw the player
   int row, col;
-  naiveBoardToScreen(player_x, player_y, row, col);
+  naiveBoardToScreen(player_pos, row, col);
   if (onScreen(row, col))
   {
     mvaddch(row, col, '@');

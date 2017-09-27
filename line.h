@@ -2,16 +2,15 @@
 #define LINE_H
 
 #include <vector>
+#include "geometry.h"
 
 struct SquareMap
 {
   // in the board's frame of reference (absolute)
-  int board_x;
-  int board_y;
+  vect2Di board_pos;
 
   // relative to the line's starting position
-  int line_x;
-  int line_y;
+  vect2Di line_pos;
 };
 
 class Line

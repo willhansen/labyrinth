@@ -1,11 +1,13 @@
 #ifndef PORTAL_H
 #define PORTAL_H
+
+#include "geometry.h"
+
 struct Portal
 {
-  int new_x;
-  int new_y;
+  vect2Di new_pos;
   // number of 90 degree rotations counter clockwise
-  int rotation;
+  mat2Di transform;
 };
 
 #endif
