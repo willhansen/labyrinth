@@ -65,6 +65,14 @@ struct mat2Di
 {
   int m11, m12, m21, m22;
 
+  mat2Di()
+  {
+    this->m11 = 1;
+    this->m12 = 0;
+    this->m21 = 0;
+    this->m22 = 1;
+  }
+
   mat2Di operator+ (mat2Di b)
   {
     mat2Di c;
