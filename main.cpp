@@ -202,6 +202,7 @@ void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
 
 void initBoard()
 {
+
   player_pos = vect2Di(5, 5);
   
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
