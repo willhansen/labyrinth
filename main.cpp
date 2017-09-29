@@ -12,7 +12,7 @@
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
-const bool NAIVE_VIEW = false;
+const bool NAIVE_VIEW = true;
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -71,7 +71,7 @@ std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
   // ties are broken towards y=+/-inf
   std::vector<vect2Di> output;
   // include the first step
-  const int num_steps = std::max(std::abs(goal_pos.x), std::abs(goal_pos.y)) + 1;
+  const int num_steps = std::max(std::abs(goal_pos.x), std::abs(goal_pos.y));
   vect2Di pos;
   double x=0;
   double y=0;
@@ -109,6 +109,7 @@ std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
     x = next_x;
     y = next_y;
   }
+  return output;
 }
 
 void screenToBoard(int row, int col, vect2Di& pos)
@@ -202,7 +203,6 @@ void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
 
 void initBoard()
 {
-
   player_pos = vect2Di(5, 5);
   
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
