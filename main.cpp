@@ -12,7 +12,8 @@
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
-const bool NAIVE_VIEW = true;
+const bool NAIVE_VIEW = false;
+const bool PORTALS_OFF = false;
 
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
@@ -27,7 +28,7 @@ const char FLOOR = ' ';
 
 void drawEverything();
 void updateSightLines();
-Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=true);
+Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
 void initNCurses();
 
 //TODO: make these non-global
@@ -78,7 +79,7 @@ std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
   double dx = static_cast<double>(goal_pos.x)/static_cast<double>(num_steps);
   double dy = static_cast<double>(goal_pos.y)/static_cast<double>(num_steps);
   output.push_back(pos);
-  for (int step_num = 1; step_num < num_steps; step_num++)
+  for (int step_num = 0; step_num < num_steps; step_num++)
   {
     // every step will enter a new square.  The question is: was it a diagonal step?
     double next_x = x+dx;
@@ -108,6 +109,7 @@ std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
     output.push_back(next_pos);
     x = next_x;
     y = next_y;
+    pos = next_pos;
   }
   return output;
 }
@@ -365,7 +367,7 @@ Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
   vect2Di real_pos = start_pos;
 
   // Sight lines don't include the starting square.  They do include the ending square.
-  for(int step_num = 1; step_num < naive_line.size(); step_num++)
+  for(int step_num = 1; step_num < static_cast<int>(naive_line.size()); step_num++)
   {
     // This does not yet account for a portal this next step may step through
     vect2Di next_real_pos = naive_line[step_num] + start_pos + offset;
@@ -382,7 +384,10 @@ Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
 
     // if only orthogonal step
     vect2Di step = next_real_pos - real_pos;
-    //orthogonalRedirect(real_pos, step);
+    if (!PORTALS_OFF)
+    { 
+      orthogonalRedirect(real_pos, step);
+    }
 
     vect2Di portal_dp = step - (next_real_pos - real_pos);
 
@@ -426,7 +431,7 @@ Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
 
 void drawLine(Line line)
 {
-  for (int i = 0; i < line.mappings.size(); i++)
+  for (int i = 0; i < static_cast<int>(line.mappings.size()); i++)
   {
     vect2Di board_pos = line.mappings[i].board_pos;
     vect2Di line_pos = line.mappings[i].line_pos;
