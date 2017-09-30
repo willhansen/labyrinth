@@ -105,6 +105,29 @@ struct mat2Di
     c.y = a.x * this->m12 + a.y * this->m22;
     return c;
   }
+
+  mat2Di operator* (mat2Di b)
+  {
+    mat2Di c;
+    c.m11 = m11*b.m11 + m12*b.m21;
+    c.m12 = m11*b.m12 + m12*b.m22;
+    c.m21 = m21*b.m11 + m22*b.m21;
+    c.m22 = m21*b.m12 + m22*b.m22;
+    return c;
+  }
+
+  void operator*= (mat2Di b)
+  {
+    mat2Di c;
+    c.m11 = m11*b.m11 + m12*b.m21;
+    c.m12 = m11*b.m12 + m12*b.m22;
+    c.m21 = m21*b.m11 + m22*b.m21;
+    c.m22 = m21*b.m12 + m22*b.m22;
+    m11=c.m11;
+    m12=c.m12;
+    m21=c.m21;
+    m22=c.m22;
+  }
 };
 
 vect2Di vect2Di::operator* (struct mat2Di M)
@@ -114,5 +137,10 @@ vect2Di vect2Di::operator* (struct mat2Di M)
   c.y = this->x * M.m21 + this->y * M.m22;
   return c;
 }
+
+const vect2Di LEFT = vect2Di(-1, 0);
+const vect2Di RIGHT = vect2Di(-1, 0);
+const vect2Di UP = vect2Di(0, 1);
+const vect2Di DOWN = vect2Di(0, -1);
 
 #endif

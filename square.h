@@ -12,8 +12,11 @@
 struct Square
 {
   bool wall = false;
-  std::shared_ptr<Portal> down_portal;
+  // These are portals you go through if you are leaving this square.
+  std::shared_ptr<Portal> right_portal;
+  std::shared_ptr<Portal> up_portal;
   std::shared_ptr<Portal> left_portal;
+  std::shared_ptr<Portal> down_portal;
   std::shared_ptr<Mote> mote;
 };
 

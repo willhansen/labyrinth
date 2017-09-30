@@ -6,7 +6,6 @@
 struct Portal
 {
   vect2Di new_pos;
-  // number of 90 degree rotations counter clockwise
   mat2Di transform;
 };
 

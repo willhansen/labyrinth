@@ -138,6 +138,16 @@ void naiveBoardToScreen(vect2Di pos, int& row, int& col)
   col = pos.x - player_pos.x + num_cols/2;
 }
 
+// TODO
+/*
+std::shared_ptr<Square> getSquarePtr(vect2Di pos)
+{
+  if (onBoard(pos))
+  {
+    return 
+}
+*/
+
 void makePortalPair(vect2Di p1, vect2Di p2, bool left=true)
 {
   if (!onBoard(p1) || !onBoard(p2))
@@ -145,18 +155,30 @@ void makePortalPair(vect2Di p1, vect2Di p2, bool left=true)
   if (left)
   {
     board[p1.x][p1.y].left_portal.reset(new Portal());
-    board[p1.x][p1.y].left_portal->new_pos = p2;
+    board[p1.x][p1.y].left_portal->new_pos = p2+LEFT;
+
+    board[p1.x-1][p1.y].right_portal.reset(new Portal());
+    board[p1.x-1][p1.y].right_portal->new_pos = p2;
 
     board[p2.x][p2.y].left_portal.reset(new Portal());
-    board[p2.x][p2.y].left_portal->new_pos = p1;
+    board[p2.x][p2.y].left_portal->new_pos = p1+LEFT;
+
+    board[p2.x-1][p2.y].right_portal.reset(new Portal());
+    board[p2.x-1][p2.y].right_portal->new_pos = p1;
   }
   else
   {
     board[p1.x][p1.y].down_portal.reset(new Portal());
-    board[p1.x][p1.y].down_portal->new_pos = p2;
+    board[p1.x][p1.y].down_portal->new_pos = p2+DOWN;
+
+    board[p1.x][p1.y-1].up_portal.reset(new Portal());
+    board[p1.x][p1.y-1].up_portal->new_pos = p2;
 
     board[p2.x][p2.y].down_portal.reset(new Portal());
-    board[p2.x][p2.y].down_portal->new_pos = p1;
+    board[p2.x][p2.y].down_portal->new_pos = p1+DOWN;
+
+    board[p2.x][p2.y-1].up_portal.reset(new Portal());
+    board[p2.x][p2.y-1].up_portal->new_pos = p1;
   }
 }
 
@@ -326,37 +348,49 @@ void updateSightLines()
 }
 
 // Redirect an orthogonal step between adjacent squares.
-void orthogonalRedirect(vect2Di start_pos, vect2Di& dp)
+// assumes step is exactly one square orthogonal
+void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset, mat2Di& portal_transform)
 {
-  vect2Di end_pos = start_pos + dp;
-  // X step
-  if (std::abs(start_pos.x - end_pos.x) > 0)
+  vect2Di naive_end_pos = start_pos + step;
+
+  if (!onBoard(start_pos))
   {
-    int big_x = std::max(start_pos.x, end_pos.x);
-    int y = start_pos.y;
-    // only bigger number square could have a portal for this transition 
-    if (onBoard(vect2Di(big_x, y)) && board[big_x][y].left_portal != nullptr)
-    {
-      dp.x += board[big_x][y].left_portal->new_pos.x - big_x;
-      dp.y += board[big_x][y].left_portal->new_pos.y - y;
-    }
+    return;
   }
-  // Y step
+  Square square = board[start_pos.x][start_pos.y];
+
+  std::shared_ptr<Portal> portalptr;
+  if (step.x  == 1)
+  {
+    portalptr = square.right_portal;
+  }
+  else if (step.x == -1)
+  {
+    portalptr = square.left_portal;
+  }
+  else if (step.y == 1)
+  {
+    portalptr = square.up_portal;
+  }
+  else if (step.y == -1)
+  {
+    portalptr = square.down_portal;
+  }
+
+  if (portalptr == nullptr)
+  {
+    // no offset to be had, nothing left to do
+    return;
+  }
   else
   {
-    int big_y = std::max(start_pos.y, end_pos.y);
-    int x = start_pos.x;
-    // only bigger number square could have a portal for this transition 
-    if (onBoard(vect2Di(x, big_y)) && board[x][big_y].down_portal != nullptr)
-    {
-      dp.x += board[x][big_y].down_portal->new_pos.x - x;
-      dp.y += board[x][big_y].down_portal->new_pos.y - big_y;
-    }
+    portal_offset = portalptr->new_pos - naive_end_pos;
+    portal_transform = portalptr->transform;
   }
 }
 
 
-Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
+Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
 {
   Line line;
   std::vector<vect2Di> naive_line = orthogonalBresneham(rel_pos);
@@ -364,45 +398,42 @@ Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
   // These represent how much the line has been teleported when going through a portal.
   // Take the real position, subtract the translation offset, then the rotation offset, and you have the line position.
   vect2Di offset;
-  vect2Di real_pos = start_pos;
+  // This is the rotation and flips of portals travelled to.  Apply to each relative step.
+  // a 2x2 matrix of ints.
+  // New transforms are multiplied onto the right.
+  mat2Di transform;
+  vect2Di board_pos = start_board_pos;
 
   // Sight lines don't include the starting square.  They do include the ending square.
   for(int step_num = 1; step_num < static_cast<int>(naive_line.size()); step_num++)
   {
+    vect2Di naive_step = naive_line[step_num] - naive_line[step_num-1];
+    // This takes into account rotations and flipping caused by portals
+    vect2Di transformed_naive_step = naive_step * transform;
     // This does not yet account for a portal this next step may step through
-    vect2Di next_real_pos = naive_line[step_num] + start_pos + offset;
-    // don't cast off the board
-    if (!onBoard(next_real_pos))
-    {
-      break;
-    }
+    vect2Di naive_next_board_pos = board_pos + transformed_naive_step;
 
-    Square new_square = board[next_real_pos.x][next_real_pos.y];
-
-    // Portals may be found on the bottom and left of any square
-    // In the case of exact diagonal, go though the portal on the bottom of a square
-
-    // if only orthogonal step
-    vect2Di step = next_real_pos - real_pos;
+    vect2Di portal_offset;
+    mat2Di portal_transform;
     if (!PORTALS_OFF)
     { 
-      orthogonalRedirect(real_pos, step);
+      orthogonalRedirect(board_pos, transformed_naive_step, portal_offset, portal_transform);
     }
 
-    vect2Di portal_dp = step - (next_real_pos - real_pos);
+    offset += portal_offset; 
+    transform *= portal_transform;
 
-    offset += portal_dp; 
-    next_real_pos += portal_dp;
+    vect2Di next_board_pos = naive_next_board_pos + portal_offset;
 
     // If the portal has sent us off the board, stop
-    if (!onBoard(next_real_pos))
+    if (!onBoard(next_board_pos))
     {
       break;
     }
 
     SquareMap square_map;
 
-    square_map.board_pos = next_real_pos;
+    square_map.board_pos = next_board_pos;
 
     square_map.line_pos = naive_line[step_num];
 
@@ -412,20 +443,18 @@ Line lineCast(vect2Di start_pos, vect2Di rel_pos, bool is_sight_line)
     if (is_sight_line)
     {
       // if there is a mote here, it wants to go to the source of the sight line
-      if (board[next_real_pos.x][next_real_pos.y].mote != nullptr)
+      if (board[next_board_pos.x][next_board_pos.y].mote != nullptr)
       {
-        board[next_real_pos.x][next_real_pos.y].mote->rel_player_pos = naive_line[0] - naive_line[step_num];
+        board[next_board_pos.x][next_board_pos.y].mote->rel_player_pos = naive_line[0] - naive_line[step_num];
       }
 
-      if (board[next_real_pos.x][next_real_pos.y].wall == true)
+      if (board[next_board_pos.x][next_board_pos.y].wall == true)
       {
         break;
       }
     }
-
-    real_pos = next_real_pos;
+    board_pos = next_board_pos;
   }
-
   return line;
 }
 
