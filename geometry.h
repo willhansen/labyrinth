@@ -1,6 +1,8 @@
 #ifndef GEOMETRY_H
 #define GEOMETRY_H
 
+#include <cmath>
+
 struct mat2Di;
 
 struct vect2Di
@@ -28,6 +30,11 @@ struct vect2Di
     return c;
   }
 
+  double angle()
+  {
+    return std::atan2(y, x);
+  }
+
   vect2Di operator- ()
   {
     vect2Di c;
@@ -37,6 +44,7 @@ struct vect2Di
   }
   
   vect2Di operator* (mat2Di M);
+  void operator*= (mat2Di M);
 
   vect2Di operator- (vect2Di b)
   {
@@ -64,6 +72,13 @@ struct vect2Di
 struct mat2Di
 {
   int m11, m12, m21, m22;
+
+  mat2Di(int m11, int m12, int m21, int m22)
+    : m11(m11)
+    , m12(m12)
+    , m21(m21)
+    , m22(m22)
+  {}
 
   mat2Di()
   {
@@ -137,10 +152,24 @@ vect2Di vect2Di::operator* (struct mat2Di M)
   c.y = this->x * M.m21 + this->y * M.m22;
   return c;
 }
+void vect2Di::operator*= (struct mat2Di M)
+{
+  vect2Di c = *this * M;
+  this->x = c.x;
+  this->y = c.y;
+}
 
 const vect2Di LEFT = vect2Di(-1, 0);
 const vect2Di RIGHT = vect2Di(-1, 0);
 const vect2Di UP = vect2Di(0, 1);
 const vect2Di DOWN = vect2Di(0, -1);
+
+const mat2Di IDENTITY = mat2Di(1,0,0,1);
+const mat2Di CCW = mat2Di(0,1,-1,0);
+const mat2Di CW = mat2Di(0,-1,1,0);
+const mat2Di FLIP_X = mat2Di(-1,0,0,1);
+const mat2Di FLIP_Y = mat2Di(1,0,0,-1);
+
+
 
 #endif
