@@ -65,26 +65,29 @@ void attemptMove(vect2Di dp)
   }
 }
 
-std::shared_ptr<Portal> getPortal(const Square& square, const vect2Di& step)
+std::shared_ptr<Portal>* getPortal(Square& square, const vect2Di& step)
 {
-  std::shared_ptr<Portal> portalptr;
+  std::shared_ptr<Portal>* portalptrptr = nullptr;
   if (step.x  == 1)
   {
-    portalptr = square.right_portal;
+    portalptrptr = &(square.right_portal);
   }
   else if (step.x == -1)
   {
-    portalptr = square.left_portal;
+    portalptrptr = &(square.left_portal);
+    //portalptrptr = std::make_shared<std::shared_ptr<Portal>>(square.left_portal);
   }
   else if (step.y == 1)
   {
-    portalptr = square.up_portal;
+    portalptrptr = &(square.up_portal);
+    //portalptrptr = std::make_shared<std::shared_ptr<Portal>>(square.up_portal);
   }
   else if (step.y == -1)
   {
-    portalptr = square.down_portal;
+    portalptrptr = &(square.down_portal);
+    //portalptrptr = std::make_shared<std::shared_ptr<Portal>>(square.down_portal);
   }
-  return portalptr;
+  return portalptrptr;
 }
 
 // TODO: allow double start and end positions in order to allow slight perturbations to avoid needing to break ties.
@@ -216,20 +219,19 @@ void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, b
   {
     return;
   }
-  square1->wall = true;
   // The steps indicate direction and must be exactly one step orthogonal
   if (abs(step1.x)+abs(step1.y) != 1 || abs(step2.x)+abs(step2.y) != 1)
   {
     return;
   }
 
-  std::shared_ptr<Portal> portal1 = getPortal(*square1, step1);
-  std::shared_ptr<Portal> portal2 = getPortal(*square2, step2);
-  portal1.reset(new Portal());
-  portal2.reset(new Portal());
+  std::shared_ptr<Portal>* portal1 = getPortal(*square1, step1);
+  std::shared_ptr<Portal>* portal2 = getPortal(*square2, step2);
+  (*portal1).reset(new Portal());
+  (*portal2).reset(new Portal());
 
-  portal1->new_pos = pos2;
-  portal2->new_pos = pos1;
+  (*portal1)->new_pos = pos2;
+  (*portal2)->new_pos = pos1;
 
   vect2Di v = step1;
   mat2Di rotation1to2 = IDENTITY;
@@ -240,27 +242,27 @@ void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, b
     rotation1to2 *= CCW;
     rotation2to1 *= CW;
   }
-  portal1->transform = rotation1to2;
-  portal2->transform = rotation2to1;
+  (*portal1)->transform = rotation1to2;
+  (*portal2)->transform = rotation2to1;
 
   if (flip == true)
   {
     if (step1.x != 0)
     {
-      portal2->transform *= FLIP_Y;
+      (*portal2)->transform *= FLIP_Y;
     }
     else
     {
-      portal2->transform *= FLIP_X;
+      (*portal2)->transform *= FLIP_X;
     }
 
     if (step2.x != 0)
     {
-      portal1->transform *= FLIP_Y;
+      (*portal1)->transform *= FLIP_Y;
     }
     else
     {
-      portal1->transform *= FLIP_X;
+      (*portal1)->transform *= FLIP_X;
     }
   }
 }
@@ -329,7 +331,9 @@ void initBoard()
   //makePortalPair(vect2Di(10, 12), vect2Di(20, 12));
   //makePortalPair(vect2Di(10, 11), vect2Di(20, 11));
   //makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
-  makePortalPair2(vect2Di(2, 2), vect2Di(-1, 0), vect2Di(3, 3), vect2Di(-1, 0));
+  makePortalPair2(vect2Di(1, 3), vect2Di(-1, 0), vect2Di(49, 8), vect2Di(1, 0), false);
+  makePortalPair2(vect2Di(1, 2), vect2Di(-1, 0), vect2Di(49, 7), vect2Di(1, 0), false);
+  makePortalPair2(vect2Di(1, 1), vect2Di(-1, 0), vect2Di(49, 6), vect2Di(1, 0), false);
 
   makeNicePortalPair(20, 20, 20, 30, 7, 0);
 
@@ -443,7 +447,7 @@ void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset,
   }
   Square square = board[start_pos.x][start_pos.y];
 
-  std::shared_ptr<Portal> portalptr = getPortal(square, step);
+  std::shared_ptr<Portal> portalptr = *getPortal(square, step);
 
   if (portalptr == nullptr)
   {
