@@ -155,7 +155,7 @@ void screenToBoard(int row, int col, vect2Di& pos)
 // Screen positions are relative to top left
 void sightMapToScreen(vect2Di pos, int& row, int& col)
 {
-  vect2Di corrected_pos = pos * player_transform;
+  vect2Di corrected_pos = pos * player_transform.inversed();
   row = num_rows/2 - corrected_pos.y;
   col = corrected_pos.x + num_cols/2;
 }
@@ -342,7 +342,9 @@ void initBoard()
   //makePortalPair(vect2Di(10, 12), vect2Di(20, 12));
   //makePortalPair(vect2Di(10, 11), vect2Di(20, 11));
   //makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
-  makePortalPair2(vect2Di(1, 6), LEFT, vect2Di(10, 6), UP, false);
+  makePortalPair2(vect2Di(1, 6), LEFT, vect2Di(1, 6), LEFT, true);
+  makePortalPair2(vect2Di(1, 5), LEFT, vect2Di(1, 5), LEFT, true);
+  makePortalPair2(vect2Di(1, 4), LEFT, vect2Di(1, 4), LEFT, true);
 
   makeNicePortalPair(20, 20, 20, 30, 7, 0);
 
