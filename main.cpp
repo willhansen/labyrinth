@@ -215,7 +215,7 @@ void makePortalPair(vect2Di p1, vect2Di p2, bool left=true)
 }
 
 
-void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip=false)
+void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip)
 {
   Square* square1 = getSquare(pos1);
   Square* square2 = getSquare(pos2);
@@ -230,25 +230,36 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
     return;
   }
 
-  std::shared_ptr<Portal>* portal1 = getPortal(*square1, step1);
-  std::shared_ptr<Portal>* portal2 = getPortal(*square2, step2);
-  (*portal1).reset(new Portal());
-  (*portal2).reset(new Portal());
-
-  (*portal1)->new_pos = pos2;
-  (*portal2)->new_pos = pos1;
-
   vect2Di v = step1;
   mat2Di rotation1to2 = IDENTITY;
-  mat2Di rotation2to1 = IDENTITY;
   while(v != -step2)
   {
     v *= CCW;
     rotation1to2 *= CCW;
-    rotation2to1 *= CW;
   }
+
+  // do all the logic for one portal at a time, just in case they are the same goddamn portal.
+  std::shared_ptr<Portal>* portal1 = getPortal(*square1, step1);
+  (*portal1).reset(new Portal());
+  (*portal1)->new_pos = pos2;
   (*portal1)->transform = rotation1to2;
-  (*portal2)->transform = rotation2to1;
+
+  if (flip == true)
+  {
+    if (step2.x != 0)
+    {
+      (*portal1)->transform *= FLIP_Y;
+    }
+    else
+    {
+      (*portal1)->transform *= FLIP_X;
+    }
+  }
+
+  std::shared_ptr<Portal>* portal2 = getPortal(*square2, step2);
+  (*portal2).reset(new Portal());
+  (*portal2)->new_pos = pos1;
+  (*portal2)->transform = rotation1to2.inversed();
 
   if (flip == true)
   {
@@ -260,19 +271,10 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
     {
       (*portal2)->transform *= FLIP_X;
     }
-
-    if (step2.x != 0)
-    {
-      (*portal1)->transform *= FLIP_Y;
-    }
-    else
-    {
-      (*portal1)->transform *= FLIP_X;
-    }
   }
 }
 
-void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip=false)
+void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip)
 {
   makeOneWayPortalPair(pos1, step1, pos2, step2, flip);
   makeOneWayPortalPair(pos1+step1, -step1, pos2+step2, -step2, flip);
@@ -321,12 +323,21 @@ void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
 
 }
 
+void makeMirror(vect2Di square, vect2Di step)
+{
+  makePortalPair2(square, step, square, step, true);
+}
+
 void initBoard()
 {
   player_pos = vect2Di(5, 5);
   
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
+
+  makePortalPair2(vect2Di(30, 8), LEFT, vect2Di(33, 5), DOWN, false);
+  makePortalPair2(vect2Di(30, 7), LEFT, vect2Di(32, 5), DOWN, false);
+  makePortalPair2(vect2Di(30, 6), LEFT, vect2Di(31, 5), DOWN, false);
 
   /*
   board[45][13].wall = true;
@@ -342,9 +353,15 @@ void initBoard()
   //makePortalPair(vect2Di(10, 12), vect2Di(20, 12));
   //makePortalPair(vect2Di(10, 11), vect2Di(20, 11));
   //makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
-  makePortalPair2(vect2Di(1, 6), LEFT, vect2Di(1, 6), LEFT, true);
-  makePortalPair2(vect2Di(1, 5), LEFT, vect2Di(1, 5), LEFT, true);
-  makePortalPair2(vect2Di(1, 4), LEFT, vect2Di(1, 4), LEFT, true);
+  
+  // This should be a mirror
+  makeMirror(vect2Di(1,9), LEFT);
+  makeMirror(vect2Di(1,8), LEFT);
+  makeMirror(vect2Di(1,7), LEFT);
+  makeMirror(vect2Di(1,6), LEFT);
+  
+  // this should be a retro-reflector
+  makePortalPair2(vect2Di(1, 4), LEFT, vect2Di(1, 4), LEFT, false);
 
   makeNicePortalPair(20, 20, 20, 30, 7, 0);
 
