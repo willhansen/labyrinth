@@ -12,7 +12,7 @@
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
-const bool NAIVE_VIEW = true;
+const bool NAIVE_VIEW = false;
 const bool PORTALS_OFF = false;
 
 const int WHITE_ON_BLACK = 0;
@@ -30,12 +30,14 @@ void drawEverything();
 void updateSightLines();
 Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
 void initNCurses();
+mat2Di transformFromStep(vect2Di start_pos, vect2Di step);
 
 //TODO: make these non-global
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
 vect2Di player_pos;
+// This is visual only, its a transform for drawing to the screen and changing the direction of movement inputs.
 mat2Di player_transform;
 int mouse_x, mouse_y;
 vect2Di mouse_pos;
@@ -60,6 +62,7 @@ void attemptMove(vect2Di dp)
     vect2Di pos = line.mappings[0].board_pos;
     if (board[pos.x][pos.y].wall == false)
     {
+      player_transform *= transformFromStep(player_pos, dp);
       player_pos = pos;
     }
   }
@@ -152,8 +155,9 @@ void screenToBoard(int row, int col, vect2Di& pos)
 // Screen positions are relative to top left
 void sightMapToScreen(vect2Di pos, int& row, int& col)
 {
-  row = num_rows/2 - pos.y;
-  col = pos.x + num_cols/2;
+  vect2Di corrected_pos = pos * player_transform;
+  row = num_rows/2 - corrected_pos.y;
+  col = corrected_pos.x + num_cols/2;
 }
 
 // This gives board to screen coordinates, player is at center, PORTALS ARE IGNORED
@@ -210,7 +214,8 @@ void makePortalPair(vect2Di p1, vect2Di p2, bool left=true)
   }
 }
 
-void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip=false)
+
+void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip=false)
 {
   Square* square1 = getSquare(pos1);
   Square* square2 = getSquare(pos2);
@@ -236,7 +241,7 @@ void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, b
   vect2Di v = step1;
   mat2Di rotation1to2 = IDENTITY;
   mat2Di rotation2to1 = IDENTITY;
-  while(v != step2)
+  while(v != -step2)
   {
     v *= CCW;
     rotation1to2 *= CCW;
@@ -265,6 +270,12 @@ void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, b
       (*portal1)->transform *= FLIP_X;
     }
   }
+}
+
+void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip=false)
+{
+  makeOneWayPortalPair(pos1, step1, pos2, step2, flip);
+  makeOneWayPortalPair(pos1+step1, -step1, pos2+step2, -step2, flip);
 }
 
 void initNCurses()
@@ -331,9 +342,7 @@ void initBoard()
   //makePortalPair(vect2Di(10, 12), vect2Di(20, 12));
   //makePortalPair(vect2Di(10, 11), vect2Di(20, 11));
   //makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
-  makePortalPair2(vect2Di(1, 3), vect2Di(-1, 0), vect2Di(49, 8), vect2Di(1, 0), false);
-  makePortalPair2(vect2Di(1, 2), vect2Di(-1, 0), vect2Di(49, 7), vect2Di(1, 0), false);
-  makePortalPair2(vect2Di(1, 1), vect2Di(-1, 0), vect2Di(49, 6), vect2Di(1, 0), false);
+  makePortalPair2(vect2Di(1, 6), LEFT, vect2Di(10, 6), UP, false);
 
   makeNicePortalPair(20, 20, 20, 30, 7, 0);
 
@@ -345,7 +354,6 @@ void initBoard()
     board[72][y].wall = true;
     board[78][y].wall = true;
   }
-
 }
 
 int main()
@@ -362,13 +370,14 @@ int main()
     if (in == 'q')
       break;
     else if (in == 'h')
-      attemptMove(vect2Di(-1, 0));
+      attemptMove(vect2Di(-1, 0)*player_transform);
     else if (in == 'j')
-      attemptMove(vect2Di(0, -1));
+      attemptMove(vect2Di(0, -1)*player_transform);
     else if (in == 'k')
-      attemptMove(vect2Di(0, 1));
+      attemptMove(vect2Di(0, 1)*player_transform);
     else if (in == 'l')
-      attemptMove(vect2Di(1, 0));
+      attemptMove(vect2Di(1, 0)*player_transform);
+    /*
     else if (in == 'y')
       attemptMove(vect2Di(-1, 1));
     else if (in == 'u')
@@ -377,6 +386,7 @@ int main()
       attemptMove(vect2Di(-1, -1));
     else if (in == 'n')
       attemptMove(vect2Di(1, -1));
+      */
 
     // Tick everything
     updateSightLines();
@@ -461,6 +471,13 @@ void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset,
   }
 }
 
+mat2Di transformFromStep(vect2Di start_pos, vect2Di step)
+{
+  mat2Di transform;
+  vect2Di offset;
+  orthogonalRedirect(start_pos, step, offset, transform);
+  return transform;
+}
 
 Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
 {
@@ -593,10 +610,10 @@ void drawSightMap()
   mvaddch(row, col, '@');
   
   // For every sight line
-  for(int line_num = 0; line_num < player_sight_lines.size(); line_num++)
+  for(int line_num = 0; line_num < static_cast<int>(player_sight_lines.size()); line_num++)
   {
     Line line = player_sight_lines[line_num];
-    for(int square_num = 0; square_num < line.mappings.size(); square_num++)
+    for(int square_num = 0; square_num < static_cast<int>(line.mappings.size()); square_num++)
     {
       SquareMap mapping = line.mappings[square_num];
       Square board_square = board[mapping.board_pos.x][mapping.board_pos.y];

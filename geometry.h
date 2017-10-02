@@ -98,6 +98,17 @@ struct mat2Di
     return c;
   }
 
+  mat2Di inverse()
+  {
+    mat2Di c;
+    int det = m11*m22-m12*m21;
+    c.m11 = m22/det;
+    c.m22 = m11/det;
+    c.m12 = -m21/det;
+    c.m21 = -m12/det;
+    return c;
+  }
+
   mat2Di operator- ()
   {
     mat2Di c;
