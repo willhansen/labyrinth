@@ -171,7 +171,7 @@ void vect2Di::operator*= (struct mat2Di M)
 }
 
 const vect2Di LEFT = vect2Di(-1, 0);
-const vect2Di RIGHT = vect2Di(-1, 0);
+const vect2Di RIGHT = vect2Di(1, 0);
 const vect2Di UP = vect2Di(0, 1);
 const vect2Di DOWN = vect2Di(0, -1);
 

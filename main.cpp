@@ -335,6 +335,13 @@ void initBoard()
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
 
+  //rectToWall(20,10,22,12);
+  getSquare(vect2Di(20,12))->wall = true;
+  getSquare(vect2Di(20,10))->wall = true;
+  getSquare(vect2Di(22,10))->wall = true;
+  //makePortalPair2(vect2Di(20, 11), RIGHT, vect2Di(21, 10), UP, false);
+
+  // corner portal on frame of square
   makePortalPair2(vect2Di(30, 8), LEFT, vect2Di(33, 5), DOWN, false);
   makePortalPair2(vect2Di(30, 7), LEFT, vect2Di(32, 5), DOWN, false);
   makePortalPair2(vect2Di(30, 6), LEFT, vect2Di(31, 5), DOWN, false);
