@@ -62,7 +62,7 @@ void attemptMove(vect2Di dp)
     vect2Di pos = line.mappings[0].board_pos;
     if (board[pos.x][pos.y].wall == false)
     {
-      player_transform *= transformFromStep(player_pos, dp);
+      player_transform *= player_transform * transformFromStep(player_pos, dp) * player_transform.inversed();
       player_pos = pos;
     }
   }
@@ -246,7 +246,7 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
 
   if (flip == true)
   {
-    if (step2.x != 0)
+    if (step1.x != 0)
     {
       (*portal1)->transform *= FLIP_Y;
     }
@@ -263,7 +263,7 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
 
   if (flip == true)
   {
-    if (step1.x != 0)
+    if (step2.x != 0)
     {
       (*portal2)->transform *= FLIP_Y;
     }
@@ -339,7 +339,7 @@ void initBoard()
   getSquare(vect2Di(20,12))->wall = true;
   getSquare(vect2Di(20,10))->wall = true;
   getSquare(vect2Di(22,10))->wall = true;
-  //makePortalPair2(vect2Di(20, 11), RIGHT, vect2Di(21, 10), UP, false);
+  makePortalPair2(vect2Di(20, 11), RIGHT, vect2Di(21, 10), UP, false);
 
   // corner portal on frame of square
   makePortalPair2(vect2Di(30, 8), LEFT, vect2Di(33, 5), DOWN, false);
@@ -536,7 +536,7 @@ Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
     }
 
     offset += portal_offset; 
-    transform *= portal_transform;
+    transform *= transform * portal_transform * transform.inversed();
 
     vect2Di next_board_pos = naive_next_board_pos + portal_offset;
 
