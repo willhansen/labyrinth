@@ -31,8 +31,10 @@ void updateSightLines();
 Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
 void initNCurses();
 mat2Di transformFromStep(vect2Di start_pos, vect2Di step);
+Square* getSquare(vect2Di pos);
 
 //TODO: make these non-global
+std::vector<std::shared_ptr<Mote>> motes;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
@@ -64,6 +66,103 @@ void attemptMove(vect2Di dp)
     {
       player_transform *= player_transform * transformFromStep(player_pos, dp) * player_transform.inversed();
       player_pos = pos;
+    }
+  }
+}
+
+bool posIsEmpty(vect2Di pos)
+{
+  Square* squareptr = getSquare(pos);
+  // Square must be empty
+  if (squareptr == nullptr || squareptr->mote != nullptr || squareptr->wall != false || pos == player_pos)
+  {
+    return false;
+  }
+  else
+  {
+    return true;
+  }
+}
+
+void createMote(vect2Di pos)
+{
+  Square* squareptr = getSquare(pos);
+  // Square must be empty
+  if (squareptr == nullptr || squareptr->mote != nullptr || squareptr->wall != false || pos == player_pos)
+  {
+    return;
+  }
+  std::shared_ptr<Mote> moteptr = std::make_shared<Mote>();
+  moteptr->pos = pos;
+  moteptr->rel_player_pos = vect2Di(0, 0);
+  squareptr->mote = moteptr;
+  motes.push_back(moteptr);
+}
+
+void setMotePos(std::shared_ptr<Mote> moteptr, vect2Di new_pos)
+{
+  Square* newSquareptr = getSquare(new_pos);
+  // Square must be empty
+  if (newSquareptr == nullptr || newSquareptr->mote != nullptr || newSquareptr->wall != false || new_pos == player_pos)
+  {
+    return;
+  }
+
+  // this square exists
+  Square* oldSquareptr = getSquare(moteptr->pos);
+  oldSquareptr->mote.reset();
+
+  newSquareptr->mote = moteptr;
+  moteptr->pos = new_pos;
+}
+
+vect2Di firstStepInDirection(vect2Di far_step)
+{
+  if (far_step == vect2Di(0, 0))
+  {
+    return far_step;
+  }
+  if (std::abs(far_step.x) > std::abs(far_step.y))
+  {
+    if (far_step.x > 0)
+    {
+      return RIGHT;
+    }
+    else
+    {
+      return LEFT;
+    }
+  }
+  else
+  {
+    if (far_step.y > 0)
+    {
+      return UP;
+    }
+    else
+    {
+      return DOWN;
+    }
+  }
+}
+
+void tickMote(std::shared_ptr<Mote> moteptr)
+{
+  // The mote wants to move towards the player
+  // But only if it has a destination
+  if (moteptr->rel_player_pos != ZERO)
+  {
+    vect2Di step = firstStepInDirection(moteptr->rel_player_pos);
+    Line step_line = lineCast(moteptr->pos, step);
+    if (step_line.mappings.size() > 0)
+    {
+      vect2Di pos = step_line.mappings[0].board_pos;
+      if (posIsEmpty(pos))
+      {
+        moteptr->rel_player_pos -= step;
+        moteptr->rel_player_pos *= transformFromStep(moteptr->pos, step);
+        setMotePos(moteptr, pos);
+      }
     }
   }
 }
@@ -346,6 +445,12 @@ void initBoard()
   makePortalPair2(vect2Di(30, 7), LEFT, vect2Di(32, 5), DOWN, false);
   makePortalPair2(vect2Di(30, 6), LEFT, vect2Di(31, 5), DOWN, false);
 
+  createMote(vect2Di(10, 20));
+  createMote(vect2Di(10, 21));
+  createMote(vect2Di(10, 22));
+  createMote(vect2Di(11, 20));
+  createMote(vect2Di(11, 21));
+
   /*
   board[45][13].wall = true;
   board[20][13].wall = true;
@@ -379,6 +484,14 @@ void initBoard()
     board[66][y].wall = true;
     board[72][y].wall = true;
     board[78][y].wall = true;
+  }
+}
+
+void updateMotes()
+{
+  for (auto moteptr : motes)
+  {
+    tickMote(moteptr);
   }
 }
 
@@ -416,6 +529,7 @@ int main()
 
     // Tick everything
     updateSightLines();
+    updateMotes();
       
     // draw things
     drawEverything();
@@ -657,6 +771,11 @@ void drawSightMap()
         color = BLACK_ON_WHITE;
         glyph = ' ';
       }
+      else if (board_square.mote != nullptr)
+      {
+        color = BLACK_ON_WHITE;
+        glyph = '*';
+      }
       else
       {
         glyph = FLOOR;
@@ -690,6 +809,11 @@ void drawBoard()
       {
         glyph = ' ';
         color = 2;
+      }
+      else if (board[pos.x][pos.y].mote != nullptr)
+      {
+        color = BLACK_ON_WHITE; 
+        glyph = '*';
       }
       else
         glyph = ' ';

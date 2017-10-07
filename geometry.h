@@ -67,6 +67,11 @@ struct vect2Di
     this->y=b.y+this->y;
   }
 
+  void operator-= (vect2Di b)
+  {
+    *this += -b;
+  }
+
 };
 
 struct mat2Di
@@ -174,6 +179,7 @@ const vect2Di LEFT = vect2Di(-1, 0);
 const vect2Di RIGHT = vect2Di(1, 0);
 const vect2Di UP = vect2Di(0, 1);
 const vect2Di DOWN = vect2Di(0, -1);
+const vect2Di ZERO = vect2Di(0, 0);
 
 const mat2Di IDENTITY = mat2Di(1,0,0,1);
 const mat2Di CCW = mat2Di(0,1,-1,0);
