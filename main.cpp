@@ -9,6 +9,7 @@
 #include <vector>
 #include <utility>
 #include <cmath>
+#include <algorithm>
 
 const int BOARD_SIZE = 100;
 const int SIGHT_RADIUS = 50; 
@@ -18,6 +19,7 @@ const bool PORTALS_OFF = false;
 const int WHITE_ON_BLACK = 0;
 const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
+const int BLACK_ON_RED = 3;
 
 //const int BACKGROUND_COLOR = BLACK_ON_WHITE;
 //const char OUT_OF_VIEW = ' ';
@@ -26,6 +28,7 @@ const char OUT_OF_VIEW = '.';
 
 const char FLOOR = ' ';
 
+Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line=false);
 void drawEverything();
 void updateSightLines();
 Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
@@ -38,7 +41,10 @@ std::vector<std::shared_ptr<Mote>> motes;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
+std::vector<Line> lasers;
 vect2Di player_pos;
+int consecutive_laser_rounds = 0;
+vect2Di player_faced_direction = RIGHT;
 // This is visual only, its a transform for drawing to the screen and changing the direction of movement inputs.
 mat2Di player_transform;
 int mouse_x, mouse_y;
@@ -58,13 +64,15 @@ bool onScreen(int row, int col)
 
 void attemptMove(vect2Di dp)
 {
+  player_faced_direction = dp;
   Line line = lineCast(player_pos, dp);
   if (line.mappings.size() > 0)
   {
     vect2Di pos = line.mappings[0].board_pos;
     if (board[pos.x][pos.y].wall == false)
     {
-      player_transform *= player_transform * transformFromStep(player_pos, dp) * player_transform.inversed();
+      player_transform *= player_transform * transformFromStep(player_pos, dp) * player_transform.inversed();;
+      player_faced_direction *= transformFromStep(player_pos, dp);
       player_pos = pos;
     }
   }
@@ -241,6 +249,17 @@ std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
   return output;
 }
 
+std::vector<vect2Di> orthogonalBresneham(vect2Di start, vect2Di end)
+{
+  vect2Di rel_end = end-start;
+  std::vector<vect2Di> rel_points = orthogonalBresneham(rel_end);
+  for (int i = 0; i < rel_points.size(); i++)
+  {
+    rel_points[i] += start;
+  }
+  return rel_points;
+}
+
 void screenToBoard(int row, int col, vect2Di& pos)
 {
   // The player is at the center of the sightmap, coordinates are (x, y) in the first quadrant
@@ -392,6 +411,7 @@ void initNCurses()
 
   init_pair(WHITE_ON_BLACK, COLOR_WHITE, COLOR_BLACK);
   init_pair(RED_ON_BLACK, COLOR_RED, COLOR_BLACK);
+  init_pair(BLACK_ON_RED, COLOR_BLACK, COLOR_RED);
   init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
 }
 
@@ -487,6 +507,86 @@ void initBoard()
   }
 }
 
+// x is in squares to the right
+// t is in turns
+// phase is scaled to full circle at 1
+double laserShape(double x, double t, double phase)
+{
+  const double WAVELENGTH = 5;
+  const double PERIOD = 5;
+  const double GROWTH_SCALE = 0.01;
+  const double GROWTH_MAX = 2;
+  const double DISTANCE_SCALE = 0.2;
+  return std::sin(x/WAVELENGTH - t/PERIOD + phase*2*M_PI) * x*DISTANCE_SCALE * std::min(std::exp(t*GROWTH_SCALE)-1, GROWTH_MAX);
+}
+
+std::vector<vect2Di> naiveLaserSquares(int t, double phase)
+{
+  const int LASER_RANGE = SIGHT_RADIUS * 2;
+  std::vector<vect2Di> laser_squares;
+  vect2Di prev_laser_point = ZERO;
+  for (int x = 1; x <= LASER_RANGE; x+=3)
+  {
+    vect2Di laser_point = vect2Di(x, std::round(laserShape(x, t, phase)));
+    std::vector<vect2Di> new_points = orthogonalBresneham(prev_laser_point, laser_point);
+    // append the new squares, but not the first one, that would be redundant.
+    laser_squares.insert(laser_squares.end(), new_points.begin()+1, new_points.end());
+    prev_laser_point = laser_point;
+  }
+  return laser_squares;
+}
+
+// make the laser beams, kill motes, and mark squares as laser
+void shootLaser()
+{
+  int t = consecutive_laser_rounds;
+  const int NUM_STREAMS = 3;
+  mat2Di rot_to_player_faced;
+  for (int i = 0; i <= player_faced_direction.ccwRotations(); i++)
+  {
+    rot_to_player_faced *= CCW;
+  }
+  for (int p = 0; p < NUM_STREAMS; p++)
+  {
+    double phase = static_cast<double>(p)/static_cast<double>(NUM_STREAMS+10);
+    std::vector<vect2Di> naive_squares = naiveLaserSquares(t, phase);
+    // adapt the naive squares to the player's location and faced direction
+    for (int i = 0; i < naive_squares.size(); i++)
+    {
+      naive_squares[i] *= rot_to_player_faced;
+      naive_squares[i] += player_pos;
+    }
+    Line laser_line = curveCast(naive_squares);
+    for (int i = 0; i < laser_line.mappings.size(); i++)
+    {
+      Square* squareptr = getSquare(laser_line.mappings[i].board_pos);
+      squareptr->laser = true;
+      if (squareptr->mote != nullptr)
+      {
+        squareptr->mote.reset();
+      }
+    }
+    lasers.push_back(laser_line);
+    
+  }
+  // remove null pointers from the mote list
+  motes.erase(std::remove(motes.begin(), motes.end(), nullptr), motes.end());
+}
+
+// remove the laser flag from all squares, and remove the laser beams
+void cleanUpLaser()
+{
+  for (int i = 0; i < lasers.size(); i++)
+  {
+    Line laser = lasers[i];
+    for (int j = 0; j < laser.mappings.size(); j++)
+    {
+      getSquare(laser.mappings[j].board_pos)->laser = false;
+    }
+  }
+  lasers.clear();
+}
+
 void updateMotes()
 {
   for (auto moteptr : motes)
@@ -503,11 +603,17 @@ int main()
 
   while(true)
   {
+    bool laser_fired = false;
     // Get input
     int in = getch();
     // Process input
     if (in == 'q')
       break;
+    else if (in == ' ')
+    {
+      shootLaser();
+      laser_fired = true;
+    }
     else if (in == 'h')
       attemptMove(vect2Di(-1, 0)*player_transform);
     else if (in == 'j')
@@ -526,6 +632,14 @@ int main()
     else if (in == 'n')
       attemptMove(vect2Di(1, -1));
       */
+    if (!laser_fired)
+    {
+      consecutive_laser_rounds = 0;
+    }
+    else
+    {
+      consecutive_laser_rounds++;
+    }
 
     // Tick everything
     updateSightLines();
@@ -533,6 +647,9 @@ int main()
       
     // draw things
     drawEverything();
+
+    // a laser is only shown for the round that it is fired.
+    cleanUpLaser();
   }
 
   endwin(); // End curses
@@ -619,10 +736,10 @@ mat2Di transformFromStep(vect2Di start_pos, vect2Di step)
   return transform;
 }
 
-Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
+
+Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
 {
   Line line;
-  std::vector<vect2Di> naive_line = orthogonalBresneham(rel_pos);
 
   // These represent how much the line has been teleported when going through a portal.
   // Take the real position, subtract the translation offset, then the rotation offset, and you have the line position.
@@ -631,12 +748,12 @@ Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
   // a 2x2 matrix of ints.
   // New transforms are multiplied onto the right.
   mat2Di transform;
-  vect2Di board_pos = start_board_pos;
+  vect2Di board_pos = naive_squares[0];
 
   // Sight lines don't include the starting square.  They do include the ending square.
-  for(int step_num = 1; step_num < static_cast<int>(naive_line.size()); step_num++)
+  for(int step_num = 1; step_num < static_cast<int>(naive_squares.size()); step_num++)
   {
-    vect2Di naive_step = naive_line[step_num] - naive_line[step_num-1];
+    vect2Di naive_step = naive_squares[step_num] - naive_squares[step_num-1];
     // This takes into account rotations and flipping caused by portals
     vect2Di transformed_naive_step = naive_step * transform;
     // This does not yet account for a portal this next step may step through
@@ -664,7 +781,7 @@ Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
 
     square_map.board_pos = next_board_pos;
 
-    square_map.line_pos = naive_line[step_num];
+    square_map.line_pos = naive_squares[step_num] - naive_squares[0];
 
     line.mappings.push_back(square_map);
 
@@ -674,7 +791,7 @@ Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
       // if there is a mote here, it wants to go to the source of the sight line
       if (board[next_board_pos.x][next_board_pos.y].mote != nullptr)
       {
-        board[next_board_pos.x][next_board_pos.y].mote->rel_player_pos = naive_line[0] - naive_line[step_num];
+        board[next_board_pos.x][next_board_pos.y].mote->rel_player_pos = naive_squares[0] - naive_squares[step_num];
       }
 
       if (board[next_board_pos.x][next_board_pos.y].wall == true)
@@ -685,6 +802,12 @@ Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
     board_pos = next_board_pos;
   }
   return line;
+}
+
+Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
+{
+  std::vector<vect2Di> naive_line = orthogonalBresneham(start_board_pos, start_board_pos + rel_pos);
+  return curveCast(naive_line, is_sight_line);
 }
 
 void drawLine(Line line)
@@ -771,9 +894,15 @@ void drawSightMap()
         color = BLACK_ON_WHITE;
         glyph = ' ';
       }
+      else if (board_square.laser == true)
+      {
+        color = BLACK_ON_RED;
+        glyph = ' ';
+      }
       else if (board_square.mote != nullptr)
       {
-        color = BLACK_ON_WHITE;
+        // draw mote
+        color = WHITE_ON_BLACK;
         glyph = '*';
       }
       else
@@ -788,6 +917,9 @@ void drawSightMap()
         break;
     }
   }
+  // where the player is facing
+  sightMapToScreen(player_faced_direction, row, col);
+  mvaddch(row, col, 'o');
 }
 
 void drawBoard()

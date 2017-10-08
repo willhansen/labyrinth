@@ -35,6 +35,20 @@ struct vect2Di
     return std::atan2(y, x);
   }
 
+  // number of ccw rotations from right
+  // 4 ccw rotations to a full circle
+  int ccwRotations()
+  {
+    return std::round(2+(angle()/M_PI*2));
+  }
+
+  // How many ccw rotations to b?
+  // 4 ccw rotations to a full circle
+  int rotsTo(vect2Di b)
+  {
+    return (b.ccwRotations()-ccwRotations()+4)%4;
+  }
+
   vect2Di operator- ()
   {
     vect2Di c;
@@ -72,6 +86,19 @@ struct vect2Di
     *this += -b;
   }
 
+  vect2Di operator* (int a)
+  {
+    vect2Di c;
+    c.x = this->x * a;
+    c.y = this->y * a;
+    return c;
+  }
+
+  void operator*= (int a)
+  {
+    this->x *= a;
+    this->y *= a;
+  }
 };
 
 struct mat2Di
