@@ -37,7 +37,7 @@ mat2Di transformFromStep(vect2Di start_pos, vect2Di step);
 Square* getSquare(vect2Di pos);
 
 //TODO: make these non-global
-std::vector<std::shared_ptr<Mote>> motes;
+std::vector<Mote*> motes;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
@@ -104,10 +104,10 @@ void createMote(vect2Di pos)
   moteptr->pos = pos;
   moteptr->rel_player_pos = vect2Di(0, 0);
   squareptr->mote = moteptr;
-  motes.push_back(moteptr);
+  motes.push_back(moteptr.get());
 }
 
-void setMotePos(std::shared_ptr<Mote> moteptr, vect2Di new_pos)
+void setMotePos(Mote* moteptr, vect2Di new_pos)
 {
   Square* newSquareptr = getSquare(new_pos);
   // Square must be empty
@@ -118,9 +118,9 @@ void setMotePos(std::shared_ptr<Mote> moteptr, vect2Di new_pos)
 
   // this square exists
   Square* oldSquareptr = getSquare(moteptr->pos);
+  newSquareptr->mote = oldSquareptr->mote;
   oldSquareptr->mote.reset();
 
-  newSquareptr->mote = moteptr;
   moteptr->pos = new_pos;
 }
 
@@ -154,7 +154,7 @@ vect2Di firstStepInDirection(vect2Di far_step)
   }
 }
 
-void tickMote(std::shared_ptr<Mote> moteptr)
+void tickMote(Mote* moteptr)
 {
   // The mote wants to move towards the player
   // But only if it has a destination
