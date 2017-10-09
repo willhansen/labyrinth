@@ -542,7 +542,7 @@ void shootLaser()
   int t = consecutive_laser_rounds;
   const int NUM_STREAMS = 3;
   mat2Di rot_to_player_faced;
-  for (int i = 0; i <= player_faced_direction.ccwRotations(); i++)
+  for (int i = 0; i < player_faced_direction.ccwRotations(); i++)
   {
     rot_to_player_faced *= CCW;
   }
@@ -557,9 +557,15 @@ void shootLaser()
       naive_squares[i] += player_pos;
     }
     Line laser_line = curveCast(naive_squares);
+    // for every square of the laser
     for (int i = 0; i < laser_line.mappings.size(); i++)
     {
       Square* squareptr = getSquare(laser_line.mappings[i].board_pos);
+      // Lasers don't go through walls
+      if (squareptr->wall == true)
+      {
+        break;
+      }
       squareptr->laser = true;
       if (squareptr->mote != nullptr)
       {
