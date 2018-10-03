@@ -71,7 +71,7 @@ void attemptMove(vect2Di dp)
     vect2Di pos = line.mappings[0].board_pos;
     if (board[pos.x][pos.y].wall == false)
     {
-      player_transform *= player_transform * transformFromStep(player_pos, dp) * player_transform.inversed();;
+      player_transform *= transformFromStep(player_pos, dp);
       player_faced_direction *= transformFromStep(player_pos, dp);
       player_pos = pos;
     }
@@ -773,7 +773,7 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
     }
 
     offset += portal_offset; 
-    transform *= transform * portal_transform * transform.inversed();
+    transform *= portal_transform;
 
     vect2Di next_board_pos = naive_next_board_pos + portal_offset;
 
