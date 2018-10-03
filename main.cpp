@@ -62,22 +62,6 @@ bool onScreen(int row, int col)
   return (row>=0 && col>=0 && row<num_rows && col<num_cols);
 }
 
-void attemptMove(vect2Di dp)
-{
-  player_faced_direction = dp;
-  Line line = lineCast(player_pos, dp);
-  if (line.mappings.size() > 0)
-  {
-    vect2Di pos = line.mappings[0].board_pos;
-    if (board[pos.x][pos.y].wall == false)
-    {
-      player_transform *= transformFromStep(player_pos, dp);
-      player_faced_direction *= transformFromStep(player_pos, dp);
-      player_pos = pos;
-    }
-  }
-}
-
 bool posIsEmpty(vect2Di pos)
 {
   Square* squareptr = getSquare(pos);
@@ -89,6 +73,22 @@ bool posIsEmpty(vect2Di pos)
   else
   {
     return true;
+  }
+}
+
+void attemptMove(vect2Di dp)
+{
+  player_faced_direction = dp;
+  Line line = lineCast(player_pos, dp);
+  if (line.mappings.size() > 0)
+  {
+    vect2Di pos = line.mappings[0].board_pos;
+    if (posIsEmpty(pos))
+    {
+      player_transform *= transformFromStep(player_pos, dp);
+      player_faced_direction *= transformFromStep(player_pos, dp);
+      player_pos = pos;
+    }
   }
 }
 
@@ -525,6 +525,7 @@ std::vector<vect2Di> naiveLaserSquares(int t, double phase)
   const int LASER_RANGE = SIGHT_RADIUS * 2;
   std::vector<vect2Di> laser_squares;
   vect2Di prev_laser_point = ZERO;
+  laser_squares.push_back(prev_laser_point);
   for (int x = 1; x <= LASER_RANGE; x+=3)
   {
     vect2Di laser_point = vect2Di(x, std::round(laserShape(x, t, phase)));
