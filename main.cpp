@@ -253,7 +253,7 @@ std::vector<vect2Di> orthogonalBresneham(vect2Di start, vect2Di end)
 {
   vect2Di rel_end = end-start;
   std::vector<vect2Di> rel_points = orthogonalBresneham(rel_end);
-  for (int i = 0; i < rel_points.size(); i++)
+  for (int i = 0; i < static_cast<int>(rel_points.size()); i++)
   {
     rel_points[i] += start;
   }
@@ -551,14 +551,14 @@ void shootLaser()
     double phase = static_cast<double>(p)/static_cast<double>(NUM_STREAMS+10);
     std::vector<vect2Di> naive_squares = naiveLaserSquares(t, phase);
     // adapt the naive squares to the player's location and faced direction
-    for (int i = 0; i < naive_squares.size(); i++)
+    for (int i = 0; i < static_cast<int>(naive_squares.size()); i++)
     {
       naive_squares[i] *= rot_to_player_faced;
       naive_squares[i] += player_pos;
     }
     Line laser_line = curveCast(naive_squares);
     // for every square of the laser
-    for (int i = 0; i < laser_line.mappings.size(); i++)
+    for (int i = 0; i < static_cast<int>(laser_line.mappings.size()); i++)
     {
       Square* squareptr = getSquare(laser_line.mappings[i].board_pos);
       // Lasers don't go through walls
@@ -582,10 +582,10 @@ void shootLaser()
 // remove the laser flag from all squares, and remove the laser beams
 void cleanUpLaser()
 {
-  for (int i = 0; i < lasers.size(); i++)
+  for (int i = 0; i < static_cast<int>(lasers.size()); i++)
   {
     Line laser = lasers[i];
-    for (int j = 0; j < laser.mappings.size(); j++)
+    for (int j = 0; j < static_cast<int>(laser.mappings.size()); j++)
     {
       getSquare(laser.mappings[j].board_pos)->laser = false;
     }
@@ -968,7 +968,7 @@ void drawBoard()
     mvaddch(row, col, '@');
   }
 
-  for(int i = 0; i < player_sight_lines.size(); i++)
+  for(int i = 0; i < static_cast<int>(player_sight_lines.size()); i++)
   {
     //if (i%4 ==1)
       drawLine(player_sight_lines[i]);

@@ -39,7 +39,7 @@ struct vect2Di
   // 4 ccw rotations to a full circle
   int ccwRotations()
   {
-    return std::round(2+(angle()/M_PI*2));
+    return static_cast<int>(std::round((angle()/M_PI * 2 + 4)))%4;
   }
 
   // How many ccw rotations to b?
@@ -191,8 +191,8 @@ struct mat2Di
 vect2Di vect2Di::operator* (struct mat2Di M)
 {
   vect2Di c;
-  c.x = this->x * M.m11 + this->y * M.m12;
-  c.y = this->x * M.m21 + this->y * M.m22;
+  c.x = this->x * M.m11 + this->y * M.m21;
+  c.y = this->x * M.m12 + this->y * M.m22;
   return c;
 }
 void vect2Di::operator*= (struct mat2Di M)
