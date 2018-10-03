@@ -541,7 +541,7 @@ std::vector<vect2Di> naiveLaserSquares(int t, double phase)
 void shootLaser()
 {
   int t = consecutive_laser_rounds;
-  const int NUM_STREAMS = 3;
+  const int NUM_STREAMS = 5;
   mat2Di rot_to_player_faced;
   for (int i = 0; i < player_faced_direction.ccwRotations(); i++)
   {
@@ -549,7 +549,7 @@ void shootLaser()
   }
   for (int p = 0; p < NUM_STREAMS; p++)
   {
-    double phase = static_cast<double>(p)/static_cast<double>(NUM_STREAMS+10);
+    double phase = static_cast<double>(p)/static_cast<double>(NUM_STREAMS+25);
     std::vector<vect2Di> naive_squares = naiveLaserSquares(t, phase);
     // adapt the naive squares to the player's location and faced direction
     for (int i = 0; i < static_cast<int>(naive_squares.size()); i++)
