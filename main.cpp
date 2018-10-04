@@ -21,10 +21,10 @@ const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 const int BLACK_ON_RED = 3;
 
-const int PLANT_MAX_HEALTH = 5;
+const int PLANT_MAX_HEALTH = 6;
 const char PLANT_GLYPH = 'E';
-const int AVG_PLANT_SPAWN_TIME = 50;
-const int AVG_FIRE_SPREAD_TIME = 5;
+const int AVG_PLANT_SPAWN_TIME = 20;
+const int AVG_FIRE_SPREAD_TIME = 1;
 
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const char OUT_OF_VIEW = ' ';
@@ -642,7 +642,8 @@ void shootLaser()
       }
       if (squareptr->plant > 0)
       {
-        squareptr->plant = 0;
+        squareptr->plant -= 1;
+        squareptr->fire = true;
         break;
       }
     }
@@ -962,6 +963,11 @@ void drawSightMap()
         glyph = board_square.grass_glyph;
       }
 
+      if (board_square.fire == true)
+      {
+        background_color = COLOR_RED;
+      }
+
       // if the sight line is tinted by a portal, apply the color modifications here (for now at least)
       if(mapping.color != COLOR_WHITE && mapping.color != COLOR_BLACK)
       {
@@ -1070,6 +1076,53 @@ void drawEverything()
   refresh();
 }
 
+// fire spreading and damaging plants
+void updateFire()
+{
+  std::vector<vect2Di> newFires;
+  // for every square on the board
+  for (int x=0; x < BOARD_SIZE; x++)
+  {
+    for (int y=0; y < BOARD_SIZE; y++)
+    {
+      vect2Di thispos = vect2Di(x, y);
+      // if this square has a fire
+      if(getSquare(thispos)->fire == true)
+      {
+        // apply damage to the current plant, maybe destroying it and putting out the fire
+        if (getSquare(thispos)->plant > 0)
+        {
+          getSquare(thispos)->plant -=1;
+        }
+        if (getSquare(thispos)->plant == 0)
+        {
+          getSquare(thispos)->fire = false;
+        }
+        // check every adjacent square
+        for (vect2Di dir : ORTHOGONALS)
+        {
+          vect2Di adjpos = posFromStep(thispos, dir);
+          // if the space has a plant but no fire
+          if (onBoard(adjpos) && 
+              getSquare(adjpos)->plant > 0 && 
+              getSquare(adjpos)->fire == false)
+          {
+            if (random(0, AVG_FIRE_SPREAD_TIME * 2) == 0)
+            {
+              newFires.push_back(adjpos);
+            }
+          }
+        }
+      }
+    }
+  }
+  // actually spawn the fires in the selected locations
+  for (vect2Di pos : newFires)
+  {
+    getSquare(pos)->fire = true;
+  }
+}
+
 // go through all the plants, and grow new ones or kill off old ones as rules dictate
 // For now, simple expansion
 void updatePlants()
@@ -1081,8 +1134,8 @@ void updatePlants()
     for (int y=0; y < BOARD_SIZE; y++)
     {
       vect2Di thispos = vect2Di(x, y);
-      // if this square has a plant
-      if(getSquare(thispos)->plant != 0)
+      // if this square has a plant THAT IS NOT ON FIRE
+      if(getSquare(thispos)->plant != 0 && getSquare(thispos)->fire == false)
       {
         // check every adjacent square
         for (vect2Di dir : ORTHOGONALS)
@@ -1161,6 +1214,7 @@ int main()
     updateSightLines();
     updateMotes();
     updatePlants();
+    updateFire();
       
     // draw things
     drawEverything();
