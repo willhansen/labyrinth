@@ -969,7 +969,7 @@ void drawSightMap()
   }
   // where the player is facing
   char aiming_indicator = 'o';
-  vect2Di rel_faced_direction = player_transform.inversed() * player_faced_direction * player_transform;
+  vect2Di rel_faced_direction = player_faced_direction * player_transform.inversed();
   if (rel_faced_direction == DOWN)
   {
     aiming_indicator = 'v';
