@@ -2,13 +2,14 @@
 #define GEOMETRY_H
 
 #include <cmath>
+#include <vector>
 
 struct mat2Di;
 
 struct vect2Di
 {
-  int x;
-  int y;
+  int x = 0;
+  int y = 0;
 
   vect2Di(int a, int b)
   {
@@ -103,7 +104,10 @@ struct vect2Di
 
 struct mat2Di
 {
-  int m11, m12, m21, m22;
+  int m11 = 1;
+  int m12 = 0;
+  int m21 = 0; 
+  int m22 = 1;
 
   mat2Di(int m11, int m12, int m21, int m22)
     : m11(m11)
@@ -207,6 +211,8 @@ const vect2Di RIGHT = vect2Di(1, 0);
 const vect2Di UP = vect2Di(0, 1);
 const vect2Di DOWN = vect2Di(0, -1);
 const vect2Di ZERO = vect2Di(0, 0);
+
+const std::vector<vect2Di> ORTHOGONALS = {RIGHT, UP, LEFT, DOWN};
 
 const mat2Di IDENTITY = mat2Di(1,0,0,1);
 const mat2Di CCW = mat2Di(0,1,-1,0);

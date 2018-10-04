@@ -21,8 +21,10 @@ const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 const int BLACK_ON_RED = 3;
 
-//const int BACKGROUND_COLOR = BLACK_ON_WHITE;
-//const char OUT_OF_VIEW = ' ';
+const int PLANT_MAX_HEALTH = 5;
+const char PLANT_GLYPH = 'E';
+const int AVG_PLANT_SPAWN_TIME = 20;
+
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const char OUT_OF_VIEW = ' ';
 
@@ -66,8 +68,14 @@ bool onScreen(int row, int col)
 bool posIsEmpty(vect2Di pos)
 {
   Square* squareptr = getSquare(pos);
-  // Square must be empty
-  if (squareptr == nullptr || squareptr->mote.lock() != nullptr || squareptr->wall != false || pos == player_pos)
+  // Square must be empty and also actually be there
+  if (squareptr == nullptr || 
+      squareptr->mote.lock() != nullptr || 
+      squareptr->wall != false || 
+      squareptr->water != 0 ||
+      squareptr->plant != 0 ||
+      squareptr->fire != false ||
+      pos == player_pos)
   {
     return false;
   }
@@ -102,7 +110,7 @@ void createMote(vect2Di pos)
 {
   Square* squareptr = getSquare(pos);
   // Square must be empty
-  if (squareptr == nullptr || squareptr->mote.lock() != nullptr || squareptr->wall != false || pos == player_pos)
+  if (squareptr == nullptr || !posIsEmpty(pos))
   {
     return;
   }
@@ -111,6 +119,17 @@ void createMote(vect2Di pos)
   moteptr->rel_player_pos = vect2Di(0, 0);
   squareptr->mote = moteptr;
   motes.push_back(moteptr);
+}
+
+void createPlant(vect2Di pos)
+{
+  Square* squareptr = getSquare(pos);
+  // Square must be empty
+  if (squareptr == nullptr || !posIsEmpty(pos))
+  {
+    return;
+  }
+  squareptr->plant = PLANT_MAX_HEALTH;
 }
 
 void deleteMote(std::shared_ptr<Mote> moteptr)
@@ -509,11 +528,11 @@ void initBoard()
   makePortalPair2(vect2Di(31, 7), LEFT, vect2Di(32, 6), DOWN, false);
   makePortalPair2(vect2Di(31, 6), LEFT, vect2Di(31, 6), DOWN, false);
 
-  createMote(vect2Di(10, 20));
-  createMote(vect2Di(10, 21));
-  createMote(vect2Di(10, 22));
-  createMote(vect2Di(11, 20));
-  createMote(vect2Di(11, 21));
+  //createMote(vect2Di(10, 20));
+  //createMote(vect2Di(10, 21));
+  //createMote(vect2Di(10, 22));
+  //createMote(vect2Di(11, 20));
+  //createMote(vect2Di(11, 21));
 
   /*
   board[45][13].wall = true;
@@ -549,6 +568,10 @@ void initBoard()
     board[72][y].wall = true;
     board[78][y].wall = true;
   }
+
+  createPlant(vect2Di(10, 50));
+  createPlant(vect2Di(10, 51));
+  createPlant(vect2Di(11, 51));
 }
 
 // x is in squares to the right
@@ -616,6 +639,11 @@ void shootLaser()
       {
         deleteMote(squareptr->mote.lock());
       }
+      if (squareptr->plant > 0)
+      {
+        squareptr->plant = 0;
+        break;
+      }
     }
     lasers.push_back(laser_line);
     
@@ -646,66 +674,6 @@ void updateMotes()
   }
 }
 
-int main()
-{
-  initNCurses();
-
-  initBoard();
-
-  while(true)
-  {
-    bool laser_fired = false;
-    // Get input
-    int in = getch();
-    // Process input
-    if (in == 'q')
-      break;
-    else if (in == ' ')
-    {
-      shootLaser();
-      laser_fired = true;
-    }
-    else if (in == 'h')
-      attemptMove(vect2Di(-1, 0)*player_transform);
-    else if (in == 'j')
-      attemptMove(vect2Di(0, -1)*player_transform);
-    else if (in == 'k')
-      attemptMove(vect2Di(0, 1)*player_transform);
-    else if (in == 'l')
-      attemptMove(vect2Di(1, 0)*player_transform);
-    /*
-    else if (in == 'y')
-      attemptMove(vect2Di(-1, 1));
-    else if (in == 'u')
-      attemptMove(vect2Di(1, 1));
-    else if (in == 'b')
-      attemptMove(vect2Di(-1, -1));
-    else if (in == 'n')
-      attemptMove(vect2Di(1, -1));
-      */
-    if (!laser_fired)
-    {
-      consecutive_laser_rounds = 0;
-    }
-    else
-    {
-      consecutive_laser_rounds++;
-    }
-
-    // Tick everything
-    updateSightLines();
-    updateMotes();
-      
-    // draw things
-    drawEverything();
-
-    // a laser is only shown for the round that it is fired.
-    cleanUpLaser();
-  }
-
-  endwin(); // End curses
-  return 0;
-}
 
 void updateSightLines()
 {
@@ -794,6 +762,13 @@ mat2Di transformFromStep(vect2Di start_pos, vect2Di step)
   return transform;
 }
 
+vect2Di posFromStep(vect2Di start_pos, vect2Di step)
+{
+  mat2Di transform;
+  vect2Di offset;
+  orthogonalRedirect(start_pos, step, offset, transform);
+  return start_pos + step + offset;
+}
 
 Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
 {
@@ -973,7 +948,12 @@ void drawSightMap()
       else if (board_square.mote.lock() != nullptr)
       {
         // draw mote
-        glyph = '*';
+        glyph = '#';
+      }
+      else if (board_square.plant > 0)
+      {
+        forground_color = COLOR_GREEN;
+        glyph = PLANT_GLYPH;
       }
       else
       {
@@ -1087,5 +1067,108 @@ void drawEverything()
   // move the cursor
   move(0,0);
   refresh();
+}
+
+// go through all the plants, and grow new ones or kill off old ones as rules dictate
+// For now, simple expansion
+void updatePlants()
+{
+  std::vector<vect2Di> whereToSpawnPlants;
+  // for every square on the board
+  for (int x=0; x < BOARD_SIZE; x++)
+  {
+    for (int y=0; y < BOARD_SIZE; y++)
+    {
+      vect2Di thispos = vect2Di(x, y);
+      // if this square has a plant
+      if(getSquare(thispos)->plant != 0)
+      {
+        // check every adjacent square
+        for (vect2Di dir : ORTHOGONALS)
+        {
+          vect2Di adjpos = posFromStep(thispos, dir);
+          // if the space is empty
+          if (posIsEmpty(adjpos))
+          {
+            if (random(0, AVG_PLANT_SPAWN_TIME * 2) == 0)
+            {
+              whereToSpawnPlants.push_back(adjpos);
+            }
+          }
+        }
+      }
+    }
+  }
+  // actually spawn the plants in the selected locations
+  for (vect2Di pos : whereToSpawnPlants)
+  {
+    // need to check this because we don't want to try to double spawn a plant (a square with 2 adjacent plants has 2 chances to spawn)
+    if (posIsEmpty(pos))
+    {
+      createPlant(pos);
+    }
+  }
+}
+
+int main()
+{
+  initNCurses();
+
+  initBoard();
+
+  while(true)
+  {
+    bool laser_fired = false;
+    // Get input
+    int in = getch();
+    // Process input
+    if (in == 'q')
+      break;
+    else if (in == ' ')
+    {
+      shootLaser();
+      laser_fired = true;
+    }
+    else if (in == 'h')
+      attemptMove(vect2Di(-1, 0)*player_transform);
+    else if (in == 'j')
+      attemptMove(vect2Di(0, -1)*player_transform);
+    else if (in == 'k')
+      attemptMove(vect2Di(0, 1)*player_transform);
+    else if (in == 'l')
+      attemptMove(vect2Di(1, 0)*player_transform);
+    /*
+    else if (in == 'y')
+      attemptMove(vect2Di(-1, 1));
+    else if (in == 'u')
+      attemptMove(vect2Di(1, 1));
+    else if (in == 'b')
+      attemptMove(vect2Di(-1, -1));
+    else if (in == 'n')
+      attemptMove(vect2Di(1, -1));
+      */
+    if (!laser_fired)
+    {
+      consecutive_laser_rounds = 0;
+    }
+    else
+    {
+      consecutive_laser_rounds++;
+    }
+
+    // Tick everything
+    updateSightLines();
+    updateMotes();
+    updatePlants();
+      
+    // draw things
+    drawEverything();
+
+    // a laser is only shown for the round that it is fired.
+    cleanUpLaser();
+  }
+
+  endwin(); // End curses
+  return 0;
 }
 
