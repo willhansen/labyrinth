@@ -37,7 +37,7 @@ mat2Di transformFromStep(vect2Di start_pos, vect2Di step);
 Square* getSquare(vect2Di pos);
 
 //TODO: make these non-global
-std::vector<Mote*> motes;
+std::vector<std::shared_ptr<Mote>> motes;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
@@ -66,7 +66,7 @@ bool posIsEmpty(vect2Di pos)
 {
   Square* squareptr = getSquare(pos);
   // Square must be empty
-  if (squareptr == nullptr || squareptr->mote != nullptr || squareptr->wall != false || pos == player_pos)
+  if (squareptr == nullptr || squareptr->mote.lock() != nullptr || squareptr->wall != false || pos == player_pos)
   {
     return false;
   }
@@ -101,7 +101,7 @@ void createMote(vect2Di pos)
 {
   Square* squareptr = getSquare(pos);
   // Square must be empty
-  if (squareptr == nullptr || squareptr->mote != nullptr || squareptr->wall != false || pos == player_pos)
+  if (squareptr == nullptr || squareptr->mote.lock() != nullptr || squareptr->wall != false || pos == player_pos)
   {
     return;
   }
@@ -109,14 +109,21 @@ void createMote(vect2Di pos)
   moteptr->pos = pos;
   moteptr->rel_player_pos = vect2Di(0, 0);
   squareptr->mote = moteptr;
-  motes.push_back(moteptr.get());
+  motes.push_back(moteptr);
 }
 
-void setMotePos(Mote* moteptr, vect2Di new_pos)
+void deleteMote(std::shared_ptr<Mote> moteptr)
+{
+  // If 2 shared pointers are equal if they point to the same mote, this should work
+  motes.erase(std::remove(motes.begin(), motes.end(), moteptr), motes.end());
+}
+
+
+void setMotePos(std::shared_ptr<Mote> moteptr, vect2Di new_pos)
 {
   Square* newSquareptr = getSquare(new_pos);
   // Square must be empty
-  if (newSquareptr == nullptr || newSquareptr->mote != nullptr || newSquareptr->wall != false || new_pos == player_pos)
+  if (newSquareptr == nullptr || newSquareptr->mote.lock() != nullptr || newSquareptr->wall != false || new_pos == player_pos)
   {
     return;
   }
@@ -159,7 +166,7 @@ vect2Di firstStepInDirection(vect2Di far_step)
   }
 }
 
-void tickMote(Mote* moteptr)
+void tickMote(std::shared_ptr<Mote> moteptr)
 {
   // The mote wants to move towards the player
   // But only if it has a destination
@@ -577,9 +584,9 @@ void shootLaser()
         break;
       }
       squareptr->laser = true;
-      if (squareptr->mote != nullptr)
+      if (squareptr->mote.lock() != nullptr)
       {
-        squareptr->mote.reset();
+        deleteMote(squareptr->mote.lock());
       }
     }
     lasers.push_back(laser_line);
@@ -821,9 +828,9 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
     if (is_sight_line)
     {
       // if there is a mote here, it wants to go to the source of the sight line
-      if (board[next_board_pos.x][next_board_pos.y].mote != nullptr)
+      if (board[next_board_pos.x][next_board_pos.y].mote.lock() != nullptr)
       {
-        board[next_board_pos.x][next_board_pos.y].mote->rel_player_pos = naive_squares[0] - naive_squares[step_num];
+        board[next_board_pos.x][next_board_pos.y].mote.lock()->rel_player_pos = naive_squares[0] - naive_squares[step_num];
       }
 
       if (board[next_board_pos.x][next_board_pos.y].wall == true)
@@ -935,7 +942,7 @@ void drawSightMap()
         background_color = COLOR_RED;
         glyph = ' ';
       }
-      else if (board_square.mote != nullptr)
+      else if (board_square.mote.lock() != nullptr)
       {
         // draw mote
         glyph = '*';
@@ -1010,7 +1017,7 @@ void drawBoard()
         glyph = ' ';
         color = 2;
       }
-      else if (board[pos.x][pos.y].mote != nullptr)
+      else if (board[pos.x][pos.y].mote.lock() != nullptr)
       {
         color = BLACK_ON_WHITE; 
         glyph = '*';

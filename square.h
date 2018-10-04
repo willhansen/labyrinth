@@ -18,7 +18,7 @@ struct Square
   std::shared_ptr<Portal> up_portal;
   std::shared_ptr<Portal> left_portal;
   std::shared_ptr<Portal> down_portal;
-  std::shared_ptr<Mote> mote;
+  std::weak_ptr<Mote> mote;
 };
 
 #endif
