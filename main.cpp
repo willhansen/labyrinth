@@ -23,7 +23,8 @@ const int BLACK_ON_RED = 3;
 
 const int PLANT_MAX_HEALTH = 5;
 const char PLANT_GLYPH = 'E';
-const int AVG_PLANT_SPAWN_TIME = 20;
+const int AVG_PLANT_SPAWN_TIME = 50;
+const int AVG_FIRE_SPREAD_TIME = 5;
 
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const char OUT_OF_VIEW = ' ';
