@@ -24,9 +24,10 @@ const int BLACK_ON_RED = 3;
 //const int BACKGROUND_COLOR = BLACK_ON_WHITE;
 //const char OUT_OF_VIEW = ' ';
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
-const char OUT_OF_VIEW = '.';
+const char OUT_OF_VIEW = ' ';
 
-const char FLOOR = ' ';
+const std::vector<char> GRASS_GLYPHS = {' ', ' ', ' ', '.', '\'', ',', '`'};
+const std::vector<int> GRASS_COLORS = {COLOR_YELLOW, COLOR_YELLOW, COLOR_GREEN};
 
 Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line=false);
 void drawEverything();
@@ -463,9 +464,30 @@ void makeMirror(vect2Di square, vect2Di step)
   makePortalPair2(square, step, square, step, true);
 }
 
+int random(int min, int max) //range : [min, max)
+{
+   static bool first = true;
+   if (first) 
+   {  
+      srand( time(NULL) ); //seeding for the first time only!
+      first = false;
+   }
+   return min + rand() % (( max ) - min);
+}
+
 void initBoard()
 {
   player_pos = vect2Di(5, 5);
+
+  // pick random grass glyphs and colors for every tile
+  for (int x=0; x < BOARD_SIZE; x++)
+  {
+    for (int y=0; y < BOARD_SIZE; y++)
+    {
+      getSquare(vect2Di(x, y))->grass_glyph = GRASS_GLYPHS[random(0, GRASS_GLYPHS.size())];
+      getSquare(vect2Di(x, y))->grass_color = GRASS_COLORS[random(0, GRASS_COLORS.size())];
+    }
+  }
   
   rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
   rectToWall(30, 5, 50, 20);
@@ -955,7 +977,8 @@ void drawSightMap()
       }
       else
       {
-        glyph = FLOOR;
+        forground_color = board_square.grass_color;
+        glyph = board_square.grass_glyph;
       }
 
       // if the sight line is tinted by a portal, apply the color modifications here (for now at least)

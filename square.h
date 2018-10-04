@@ -13,6 +13,8 @@ struct Square
 {
   bool wall = false;
   bool laser = false;
+  char grass_glyph;
+  int grass_color;
   // These are portals you go through if you are leaving this square.
   std::shared_ptr<Portal> right_portal;
   std::shared_ptr<Portal> up_portal;
