@@ -76,6 +76,11 @@ bool posIsEmpty(vect2Di pos)
   }
 }
 
+int getColorPairIndex(int forground, int background)
+{
+  return forground * COLORS + background;
+}
+
 void attemptMove(vect2Di dp)
 {
   player_faced_direction = dp;
@@ -409,10 +414,14 @@ void initNCurses()
   getmaxyx(stdscr,num_rows,num_cols);		/* get the number of rows and columns */
   mousemask(ALL_MOUSE_EVENTS, NULL);
 
-  init_pair(WHITE_ON_BLACK, COLOR_WHITE, COLOR_BLACK);
-  init_pair(RED_ON_BLACK, COLOR_RED, COLOR_BLACK);
-  init_pair(BLACK_ON_RED, COLOR_BLACK, COLOR_RED);
-  init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
+  // init all the color pairs
+  for(int forground=0; forground < COLORS; ++forground)
+  {
+    for(int background=0; background < COLORS; ++background)
+    {
+      init_pair(getColorPairIndex(forground, background), forground, background);
+    }
+  }
 }
 
 void rectToWall(int left, int bottom, int right, int top)
@@ -711,7 +720,7 @@ void updateSightLines()
 
 // Redirect an orthogonal step between adjacent squares.
 // assumes step is exactly one square orthogonal
-void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset, mat2Di& portal_transform)
+void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset, mat2Di& portal_transform, int& portal_color)
 {
   vect2Di naive_end_pos = start_pos + step;
 
@@ -732,7 +741,14 @@ void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset,
   {
     portal_offset = portalptr->new_pos - naive_end_pos;
     portal_transform = portalptr->transform;
+    portal_color = portalptr->color;
   }
+}
+// overload to make the color optional
+void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset, mat2Di& portal_transform)
+{
+  int color = COLOR_WHITE;
+  return orthogonalRedirect(start_pos, step, portal_offset, portal_transform, color);
 }
 
 mat2Di transformFromStep(vect2Di start_pos, vect2Di step)
@@ -755,6 +771,8 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
   // a 2x2 matrix of ints.
   // New transforms are multiplied onto the right.
   mat2Di transform;
+
+  int color = COLOR_WHITE; // As a sight line goes through a portal, if that portal has a non-white or non-black color, that color overwrites the old one (may have fancier interactions later)
   vect2Di board_pos = naive_squares[0];
 
   // Sight lines don't include the starting square.  They do include the ending square.
@@ -768,9 +786,14 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
 
     vect2Di portal_offset;
     mat2Di portal_transform;
+    int portal_color = COLOR_WHITE; // white means no change
     if (!PORTALS_OFF)
     { 
-      orthogonalRedirect(board_pos, transformed_naive_step, portal_offset, portal_transform);
+      orthogonalRedirect(board_pos, transformed_naive_step, portal_offset, portal_transform, portal_color);
+    }
+    if(portal_color != COLOR_WHITE)
+    {
+      color = portal_color;
     }
 
     offset += portal_offset; 
@@ -789,6 +812,8 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
     square_map.board_pos = next_board_pos;
 
     square_map.line_pos = naive_squares[step_num] - naive_squares[0];
+
+    square_map.color = color;
 
     line.mappings.push_back(square_map);
 
@@ -883,13 +908,15 @@ void drawSightMap()
   for(int line_num = 0; line_num < static_cast<int>(player_sight_lines.size()); line_num++)
   {
     Line line = player_sight_lines[line_num];
+    // For every square on that line of sight
     for(int square_num = 0; square_num < static_cast<int>(line.mappings.size()); square_num++)
     {
       SquareMap mapping = line.mappings[square_num];
       Square board_square = board[mapping.board_pos.x][mapping.board_pos.y];
       int row, col;
       sightMapToScreen(mapping.line_pos, row, col);
-      int color = WHITE_ON_BLACK;
+      int forground_color = COLOR_WHITE;
+      int background_color = COLOR_BLACK;
       char glyph;
       // if player, show the player.
       if (mapping.board_pos == player_pos)
@@ -898,35 +925,69 @@ void drawSightMap()
       }
       else if (board_square.wall == true)
       {
-        color = BLACK_ON_WHITE;
+        forground_color = COLOR_BLACK;
+        background_color = COLOR_WHITE;
         glyph = ' ';
       }
       else if (board_square.laser == true)
       {
-        color = BLACK_ON_RED;
+        forground_color = COLOR_BLACK;
+        background_color = COLOR_RED;
         glyph = ' ';
       }
       else if (board_square.mote != nullptr)
       {
         // draw mote
-        color = WHITE_ON_BLACK;
         glyph = '*';
       }
       else
       {
         glyph = FLOOR;
       }
-      attron(COLOR_PAIR(color));
+
+      // if the sight line is tinted by a portal, apply the color modifications here (for now at least)
+      if(mapping.color != COLOR_WHITE && mapping.color != COLOR_BLACK)
+      {
+        if(forground_color != COLOR_BLACK)
+        {
+          forground_color = mapping.color;
+        }
+        if(background_color != COLOR_BLACK)
+        {
+          background_color = mapping.color;
+        }
+      }
+
+      // actually draw the thing
+      attron(COLOR_PAIR(getColorPairIndex(forground_color, background_color)));
       mvaddch(row, col, glyph);
-      attroff(COLOR_PAIR(color));
+      attroff(COLOR_PAIR(getColorPairIndex(forground_color, background_color)));
       // if we just drew a wall, done with this line
       if (board_square.wall == true)
         break;
     }
   }
   // where the player is facing
+  char aiming_indicator = 'o';
+  vect2Di rel_faced_direction = player_transform.inversed() * player_faced_direction * player_transform;
+  if (rel_faced_direction == DOWN)
+  {
+    aiming_indicator = 'v';
+  }
+  else if (rel_faced_direction == UP)
+  {
+    aiming_indicator = '^';
+  }
+  else if (rel_faced_direction == LEFT)
+  {
+    aiming_indicator = '<';
+  }
+  else if (rel_faced_direction == RIGHT)
+  {
+    aiming_indicator = '>';
+  }
   sightMapToScreen(player_faced_direction, row, col);
-  mvaddch(row, col, 'o');
+  mvaddch(row, col, aiming_indicator);
 }
 
 void drawBoard()

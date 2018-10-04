@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "geometry.h"
+#include <ncurses.h>
 
 struct SquareMap
 {
@@ -11,6 +12,9 @@ struct SquareMap
 
   // relative to the line's starting position
   vect2Di line_pos;
+
+  // A color tint from going through portals
+  int color = COLOR_WHITE;
 };
 
 class Line
