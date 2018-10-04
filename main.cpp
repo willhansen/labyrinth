@@ -477,9 +477,15 @@ void initBoard()
   makePortalPair2(vect2Di(20, 11), RIGHT, vect2Di(21, 10), UP, false);
 
   // corner portal on frame of square
-  makePortalPair2(vect2Di(30, 8), LEFT, vect2Di(33, 5), DOWN, false);
-  makePortalPair2(vect2Di(30, 7), LEFT, vect2Di(32, 5), DOWN, false);
-  makePortalPair2(vect2Di(30, 6), LEFT, vect2Di(31, 5), DOWN, false);
+  getSquare(vect2Di(30,8))->wall = false;
+  getSquare(vect2Di(30,7))->wall = false;
+  getSquare(vect2Di(30,6))->wall = false;
+  getSquare(vect2Di(33,5))->wall = false;
+  getSquare(vect2Di(32,5))->wall = false;
+  getSquare(vect2Di(31,5))->wall = false;
+  makePortalPair2(vect2Di(31, 8), LEFT, vect2Di(33, 6), DOWN, false);
+  makePortalPair2(vect2Di(31, 7), LEFT, vect2Di(32, 6), DOWN, false);
+  makePortalPair2(vect2Di(31, 6), LEFT, vect2Di(31, 6), DOWN, false);
 
   createMote(vect2Di(10, 20));
   createMote(vect2Di(10, 21));
