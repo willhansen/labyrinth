@@ -89,6 +89,26 @@ bool posIsEmpty(vect2Di pos)
   }
 }
 
+bool posIsWalkable(vect2Di pos)
+{
+  Square* squareptr = getSquare(pos);
+  // Square must be empty and also actually be there
+  if (squareptr == nullptr || 
+      squareptr->mote.lock() != nullptr || 
+      squareptr->wall != false || 
+      squareptr->water > SHALLOW_WATER_DEPTH ||
+      squareptr->plant != 0 ||
+      squareptr->fire != false ||
+      pos == player_pos)
+  {
+    return false;
+  }
+  else
+  {
+    return true;
+  }
+}
+
 int getColorPairIndex(int forground, int background)
 {
   return forground * COLORS + background;
@@ -101,7 +121,7 @@ void attemptMove(vect2Di dp)
   if (line.mappings.size() > 0)
   {
     vect2Di pos = line.mappings[0].board_pos;
-    if (posIsEmpty(pos))
+    if (posIsWalkable(pos))
     {
       player_transform *= transformFromStep(player_pos, dp);
       player_faced_direction *= transformFromStep(player_pos, dp);
@@ -129,7 +149,7 @@ void createPlant(vect2Di pos)
 {
   Square* squareptr = getSquare(pos);
   // Square must be empty
-  if (squareptr == nullptr || !posIsEmpty(pos))
+  if (squareptr == nullptr || !posIsWalkable(pos))
   {
     return;
   }
@@ -968,11 +988,6 @@ void drawSightMap()
         // draw mote
         glyph = '#';
       }
-      else if (board_square.plant > 0)
-      {
-        forground_color = COLOR_GREEN;
-        glyph = PLANT_GLYPH;
-      }
       else if (board_square.water > 0)
       {
         glyph = ' ';
@@ -985,12 +1000,23 @@ void drawSightMap()
           background_color = COLOR_BLUE;
         }
 
+        if (board_square.plant > 0)
+        {
+          forground_color = COLOR_BLACK;
+          glyph = PLANT_GLYPH;
+        }
+      }
+      else if (board_square.plant > 0)
+      {
+        forground_color = COLOR_GREEN;
+        glyph = PLANT_GLYPH;
       }
       else
       {
         forground_color = board_square.grass_color;
         glyph = board_square.grass_glyph;
       }
+
 
       if (board_square.fire == true)
       {
@@ -1184,6 +1210,7 @@ void updateFire()
           // if the space has a plant but no fire
           if (onBoard(adjpos) && 
               getSquare(adjpos)->plant > 0 && 
+              getSquare(adjpos)->water == 0 && 
               getSquare(adjpos)->fire == false)
           {
             if (random(0, AVG_FIRE_SPREAD_TIME * 2) == 0)
@@ -1221,7 +1248,7 @@ void updatePlants()
         {
           vect2Di adjpos = posFromStep(thispos, dir);
           // if the space is empty
-          if (posIsEmpty(adjpos))
+          if (posIsWalkable(adjpos))
           {
             if (random(0, AVG_PLANT_SPAWN_TIME * 2) == 0)
             {
@@ -1236,7 +1263,7 @@ void updatePlants()
   for (vect2Di pos : whereToSpawnPlants)
   {
     // need to check this because we don't want to try to double spawn a plant (a square with 2 adjacent plants has 2 chances to spawn)
-    if (posIsEmpty(pos))
+    if (posIsWalkable(pos))
     {
       createPlant(pos);
     }
