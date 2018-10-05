@@ -21,10 +21,13 @@ const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 const int BLACK_ON_RED = 3;
 
-const int PLANT_MAX_HEALTH = 6;
+const int PLANT_MAX_HEALTH = 10;
 const char PLANT_GLYPH = 'E';
 const int AVG_PLANT_SPAWN_TIME = 20;
-const int AVG_FIRE_SPREAD_TIME = 1;
+const int AVG_FIRE_SPREAD_TIME = 2;
+
+const int SHALLOW_WATER_DEPTH = 3;
+const int AVG_WATER_FLOW_TIME = 1;
 
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const char OUT_OF_VIEW = ' ';
@@ -131,6 +134,17 @@ void createPlant(vect2Di pos)
     return;
   }
   squareptr->plant = PLANT_MAX_HEALTH;
+}
+
+void createWater(vect2Di pos, int depth)
+{
+  Square* squareptr = getSquare(pos);
+  // Square must be empty
+  if (!posIsEmpty(pos))
+  {
+    return;
+  }
+  squareptr->water = depth;
 }
 
 void deleteMote(std::shared_ptr<Mote> moteptr)
@@ -570,9 +584,11 @@ void initBoard()
     board[78][y].wall = true;
   }
 
-  createPlant(vect2Di(10, 50));
-  createPlant(vect2Di(10, 51));
-  createPlant(vect2Di(11, 51));
+  createPlant(vect2Di(10, 40));
+  createPlant(vect2Di(10, 41));
+  createPlant(vect2Di(11, 41));
+
+  createWater(vect2Di(10, 15), 300);
 }
 
 // x is in squares to the right
@@ -957,6 +973,19 @@ void drawSightMap()
         forground_color = COLOR_GREEN;
         glyph = PLANT_GLYPH;
       }
+      else if (board_square.water > 0)
+      {
+        glyph = ' ';
+        if (board_square.water <= SHALLOW_WATER_DEPTH)
+        {
+          background_color = COLOR_CYAN;
+        }
+        else
+        {
+          background_color = COLOR_BLUE;
+        }
+
+      }
       else
       {
         forground_color = board_square.grass_color;
@@ -1074,6 +1103,56 @@ void drawEverything()
   // move the cursor
   move(0,0);
   refresh();
+}
+
+// Flow water
+void updateWater()
+{
+
+  // each flow is one water moving from the first of the pair to the second.
+  std::vector<std::pair<vect2Di, vect2Di>> flows;
+  // for every square on the board
+  for (int x=0; x < BOARD_SIZE; x++)
+  {
+    for (int y=0; y < BOARD_SIZE; y++)
+    {
+      vect2Di thispos = vect2Di(x, y);
+      // if this square has water deeper than 1
+      if(getSquare(thispos)->water > 1)
+      {
+        // check every adjacent square
+        for (vect2Di dir : ORTHOGONALS)
+        {
+          vect2Di adjpos = posFromStep(thispos, dir);
+          // if there can be a flow from here to there
+          // TODO: different flow rules for shallow vs deep water?
+          if (onBoard(adjpos) && 
+              getSquare(adjpos)->wall==false &&
+              getSquare(adjpos)->plant==false &&
+              getSquare(adjpos)->water <= getSquare(thispos)->water-2)
+
+          {
+            if (random(0, AVG_WATER_FLOW_TIME * 2) == 0)
+            {
+              flows.push_back(std::make_pair(thispos, adjpos));
+            }
+          }
+        }
+      }
+    }
+  }
+  // randomize the order of attempted flows to prevent directional bias
+  std::random_shuffle(flows.begin(), flows.end());
+  // actually flow the water the plants in the selected locations
+  for (std::pair<vect2Di, vect2Di> flowpair : flows)
+  {
+    // if there is still enough of a water difference to allow a flow
+    if (getSquare(flowpair.first)->water > getSquare(flowpair.second)->water+1)
+    {
+     getSquare(flowpair.first)->water -= 1;
+     getSquare(flowpair.second)->water += 1;
+    }
+  }
 }
 
 // fire spreading and damaging plants
@@ -1215,6 +1294,7 @@ int main()
     updateMotes();
     updatePlants();
     updateFire();
+    updateWater();
       
     // draw things
     drawEverything();
