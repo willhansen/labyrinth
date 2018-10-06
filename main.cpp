@@ -1,11 +1,13 @@
+#define _XOPEN_SOURCE_EXTENDED 1
 #include "square.h"
 #include "line.h"
 #include "portal.h"
 #include "mote.h"
 #include "geometry.h"
 
-#include <ncurses.h>			/* ncurses.h includes stdio.h */  
+#include <ncursesw/ncurses.h>			/* ncurses.h includes stdio.h */  
 #include <string.h> 
+#include <locale.h>
 #include <vector>
 #include <tuple>
 #include <utility>
@@ -23,7 +25,7 @@ const int BLACK_ON_WHITE = 2;
 const int BLACK_ON_RED = 3;
 
 const int PLANT_MAX_HEALTH = 10;
-const char PLANT_GLYPH = 'E';
+const wchar_t* PLANT_GLYPH = L"♣";
 const int AVG_PLANT_SPAWN_TIME = 20;
 const int AVG_FIRE_SPREAD_TIME = 2;
 
@@ -31,9 +33,9 @@ const int SHALLOW_WATER_DEPTH = 3;
 const int AVG_WATER_FLOW_TIME = 1;
 
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
-const char OUT_OF_VIEW = ' ';
+const wchar_t* OUT_OF_VIEW = L" ";
 
-const std::vector<char> GRASS_GLYPHS = {' ', ' ', ' ', '.', '\'', ',', '`'};
+const std::vector<const wchar_t*> GRASS_GLYPHS = {L" ", L" ", L" ", L".", L"'", L",", L"`"};
 const std::vector<int> GRASS_COLORS = {COLOR_YELLOW, COLOR_YELLOW, COLOR_GREEN};
 
 Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line=false);
@@ -896,7 +898,7 @@ void drawLine(Line line)
     naiveBoardToScreen(board_pos, row, col);
     if(onScreen(row, col))
     {
-      char glyph;
+      wchar_t glyph;
       vect2Di dpos = line_pos - prev_line_pos;
       if (dpos.x == 0)
         glyph = '|';
@@ -915,8 +917,9 @@ void drawLine(Line line)
           glyph = '|';
       }
 
+      const wchar_t* glyphptr = &glyph;
       attron(COLOR_PAIR(RED_ON_BLACK));
-      mvaddch(row, col, glyph);
+      mvaddwstr(row, col, glyphptr);
       attroff(COLOR_PAIR(RED_ON_BLACK));
     }
   }
@@ -930,7 +933,7 @@ void drawSightMap()
   {
     for (int col = 0; col < num_cols; col++)
     {
-      mvaddch(row, col, OUT_OF_VIEW);
+      mvaddwstr(row, col, OUT_OF_VIEW);
     }
   }
   attroff(COLOR_PAIR(BACKGROUND_COLOR));
@@ -952,26 +955,26 @@ void drawSightMap()
       sightMapToScreen(mapping.line_pos, row, col);
       int forground_color = COLOR_WHITE;
       int background_color = COLOR_BLACK;
-      char glyph;
+      const wchar_t* glyph;
       // if player, show the player.
       if (mapping.board_pos == player_pos)
       {
-        glyph = '@';
+        glyph = L"@";
       }
       else if (board_square.wall == true)
       {
         forground_color = COLOR_BLACK;
         background_color = COLOR_WHITE;
-        glyph = ' ';
+        glyph = L" ";
       }
       else if (board_square.mote.lock() != nullptr)
       {
         // draw mote
-        glyph = '#';
+        glyph = L"#";
       }
       else if (board_square.water > 0)
       {
-        glyph = ' ';
+        glyph = L" ";
         if (board_square.water <= SHALLOW_WATER_DEPTH)
         {
           background_color = COLOR_CYAN;
@@ -1019,7 +1022,7 @@ void drawSightMap()
 
       // actually draw the thing
       attron(COLOR_PAIR(getColorPairIndex(forground_color, background_color)));
-      mvaddch(row, col, glyph);
+      mvaddwstr(row, col, glyph);
       attroff(COLOR_PAIR(getColorPairIndex(forground_color, background_color)));
       // if we just drew a wall, done with this line
       if (board_square.wall == true)
@@ -1027,7 +1030,7 @@ void drawSightMap()
     }
   }
   // where the player is facing
-  char aiming_indicator = 'o';
+  wchar_t aiming_indicator = 'o';
   vect2Di rel_faced_direction = player_faced_direction * player_transform.inversed();
   if (rel_faced_direction == DOWN)
   {
@@ -1060,7 +1063,7 @@ void drawBoard()
     {
       vect2Di pos;
       screenToBoard(row, col, pos);
-      char glyph;
+      wchar_t glyph;
       int color = 0;
       if (!onBoard(pos))
         glyph = '.';
@@ -1263,6 +1266,7 @@ void updatePlants()
 
 int main()
 {
+  setlocale(LC_ALL, "");
   initNCurses();
 
   initBoard();

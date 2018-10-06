@@ -2,7 +2,7 @@
 #define PORTAL_H
 
 #include "geometry.h"
-#include <ncurses.h>
+#include <ncursesw/ncurses.h>
 
 struct Portal
 {

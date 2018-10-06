@@ -3,7 +3,7 @@
 
 #include <vector>
 #include "geometry.h"
-#include <ncurses.h>
+#include <ncursesw/ncurses.h>
 
 struct SquareMap
 {
