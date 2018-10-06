@@ -15,6 +15,7 @@ struct Square
   bool fire = false;
   int water = 0; // Water depth
   int plant = 0; // plant health
+  int steam = 0; // steam pressure
   const wchar_t* grass_glyph;
   int grass_color;
   // These are portals you go through if you are leaving this square.

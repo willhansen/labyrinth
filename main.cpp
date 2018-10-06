@@ -32,6 +32,9 @@ const int AVG_FIRE_SPREAD_TIME = 2;
 const int SHALLOW_WATER_DEPTH = 3;
 const int AVG_WATER_FLOW_TIME = 1;
 
+const int STEAM_PER_WATER = 100;
+const wchar_t* STEAM_GLYPH = L"▒";
+
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const wchar_t* OUT_OF_VIEW = L" ";
 
@@ -531,6 +534,10 @@ int random(int min, int max) //range : [min, max)
       srand( time(NULL) ); //seeding for the first time only!
       first = false;
    }
+   if (max == min)
+   {
+     return min;
+   }
    return min + rand() % (( max ) - min);
 }
 
@@ -967,6 +974,10 @@ void drawSightMap()
         background_color = COLOR_WHITE;
         glyph = L" ";
       }
+      else if (board_square.steam > 0)
+      {
+        glyph = STEAM_GLYPH;
+      }
       else if (board_square.mote.lock() != nullptr)
       {
         // draw mote
@@ -1115,9 +1126,109 @@ void drawEverything()
   refresh();
 }
 
+void updateSteam()
+{
+  // each flow is a bunch of steam moving from the first of the tuple to the second.
+  // The third element is the magnitude of the flow
+  std::vector<std::tuple<vect2Di, vect2Di, int>> flows;
+  // for every square on the board
+  for (int x=0; x < BOARD_SIZE; x++)
+  {
+    for (int y=0; y < BOARD_SIZE; y++)
+    {
+      vect2Di thispos = vect2Di(x, y);
+      // if this square has steam and fire, there is no more fire
+      if(getSquare(thispos)->steam > 0 && getSquare(thispos)->fire == true)
+      {
+        getSquare(thispos)->fire = false;
+      }
+      // if this square only has 1 steam, the steam fades away to nothing
+      if(getSquare(thispos)->steam == 1)
+      {
+        getSquare(thispos)->steam = 0;
+      }
+      // if this square has enough steam to possibly flow elsewhere
+      if(getSquare(thispos)->steam > 1)
+      {
+        std::vector<vect2Di> downhills;
+        // check every adjacent square
+        for (vect2Di dir : ORTHOGONALS)
+        {
+          vect2Di adjpos = posFromStep(thispos, dir);
+          // if there can be a flow from here to there
+          if (onBoard(adjpos) && 
+              getSquare(adjpos)->wall==false &&
+              getSquare(adjpos)->steam <= getSquare(thispos)->steam-2)
+
+          {
+            downhills.push_back(adjpos);
+          }
+        }
+        // Now look through the adjacent squares that have less steam, and find out how much steam this square has to give to the other squares for all the squares to have the same amount of steam.
+        int totalSteam = getSquare(thispos)->steam;
+        for (vect2Di downhillpos : downhills)
+        {
+          totalSteam += getSquare(downhillpos)->steam;
+        }
+        int avgSteam = totalSteam / (1 + downhills.size()); 
+        int extrasteam = totalSteam - (avgSteam * (1+downhills.size())); // TODO: make this not be.
+        // extrasteam can be 1, 2, or 3.  We don't need to do anything if it's 1.
+        extrasteam -=1;
+        // shuffle the downhills to prevent direction bias of distribution of extrasteams 
+        std::random_shuffle(downhills.begin(), downhills.end());
+        for (vect2Di downhillpos : downhills)
+        {
+          int magnitude = avgSteam - getSquare(downhillpos)->steam;
+          if (extrasteam > 0)
+          {
+            magnitude += 1;
+            extrasteam -= 1;
+          }
+          flows.push_back(std::make_tuple(thispos, downhillpos, magnitude));
+        }
+      }
+    }
+  }
+  // randomize the order of attempted flows to prevent directional bias
+  std::random_shuffle(flows.begin(), flows.end());
+  // actually flow the steam
+  // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, flowMagnitude)
+  for (std::tuple<vect2Di, vect2Di, int> flowtuple : flows)
+  {
+    // if there is still enough of a steam difference to allow a flow
+    if (getSquare(std::get<0>(flowtuple))->steam > getSquare(std::get<1>(flowtuple))->steam+1)
+    {
+      // Reduce the flow magnitude if we need to
+      int magnitude = std::get<2>(flowtuple);
+      if (getSquare(std::get<1>(flowtuple))->steam + magnitude > getSquare(std::get<0>(flowtuple))->steam - magnitude)
+      {
+        magnitude = (getSquare(std::get<0>(flowtuple))->steam + getSquare(std::get<1>(flowtuple))->steam)/2 - getSquare(std::get<1>(flowtuple))->steam;
+      }
+      getSquare(std::get<0>(flowtuple))->steam -= magnitude;
+      getSquare(std::get<1>(flowtuple))->steam += magnitude;
+    }
+  }
+}
+
 // Flow water
 void updateWater()
 {
+  // First check for water->steam from fire
+  // for every square on the board
+  for (int x=0; x < BOARD_SIZE; x++)
+  {
+    for (int y=0; y < BOARD_SIZE; y++)
+    {
+      vect2Di thispos = vect2Di(x, y);
+      // if this square has water and fire, water turns into steam (the steam takes care of putting out fires)
+      if(getSquare(thispos)->water > 0 && getSquare(thispos)->fire==true)
+      {
+        getSquare(thispos)->water  -= 1;
+        getSquare(thispos)->steam  += STEAM_PER_WATER;
+      }
+    }
+  }
+
   // each flow is one water moving from the first of the tuple to the second.
   // The third element is the relative direction of the flow
   std::vector<std::tuple<vect2Di, vect2Di, vect2Di>> flows;
@@ -1142,7 +1253,7 @@ void updateWater()
               getSquare(adjpos)->water <= getSquare(thispos)->water-2)
 
           {
-            if (random(0, AVG_WATER_FLOW_TIME * 2) == 0)
+            if (random(0, (AVG_WATER_FLOW_TIME-1) * 2) == 0)
             {
               flows.push_back(std::make_tuple(thispos, adjpos, dir));
             }
@@ -1200,13 +1311,12 @@ void updateFire()
           for (vect2Di dir : ORTHOGONALS)
           {
             vect2Di adjpos = posFromStep(thispos, dir);
-            // if the space has no water and no fire, the fire may spread
+            // if the space has no fire, the fire may spread
             if (onBoard(adjpos) && 
-                getSquare(adjpos)->water == 0 && 
                 getSquare(adjpos)->wall == false && 
                 getSquare(adjpos)->fire == false)
             {
-              if (random(0, AVG_FIRE_SPREAD_TIME * 2) == 0)
+              if (random(0, (AVG_FIRE_SPREAD_TIME-1) * 2) == 0)
               {
                 newFires.push_back(adjpos);
               }
@@ -1244,7 +1354,7 @@ void updatePlants()
           // if the space is empty
           if (posIsWalkable(adjpos))
           {
-            if (random(0, AVG_PLANT_SPAWN_TIME * 2) == 0)
+            if (random(0, (AVG_PLANT_SPAWN_TIME-1) * 2) == 0)
             {
               whereToSpawnPlants.push_back(adjpos);
             }
@@ -1318,6 +1428,7 @@ int main()
     }
     updatePlants();
     updateWater();
+    updateSteam();
     updateSightLines();
     updateMotes();
       
