@@ -7,6 +7,7 @@
 #include <ncurses.h>			/* ncurses.h includes stdio.h */  
 #include <string.h> 
 #include <vector>
+#include <tuple>
 #include <utility>
 #include <cmath>
 #include <algorithm>
@@ -114,9 +115,12 @@ int getColorPairIndex(int forground, int background)
   return forground * COLORS + background;
 }
 
-void attemptMove(vect2Di dp)
+void attemptMove(vect2Di dp, bool voluntaryMove = true)
 {
-  player_faced_direction = dp;
+  if (voluntaryMove)
+  {
+    player_faced_direction = dp;
+  }
   Line line = lineCast(player_pos, dp);
   if (line.mappings.size() > 0)
   {
@@ -1134,9 +1138,9 @@ void drawEverything()
 // Flow water
 void updateWater()
 {
-
-  // each flow is one water moving from the first of the pair to the second.
-  std::vector<std::pair<vect2Di, vect2Di>> flows;
+  // each flow is one water moving from the first of the tuple to the second.
+  // The third element is the relative direction of the flow
+  std::vector<std::tuple<vect2Di, vect2Di, vect2Di>> flows;
   // for every square on the board
   for (int x=0; x < BOARD_SIZE; x++)
   {
@@ -1160,7 +1164,7 @@ void updateWater()
           {
             if (random(0, AVG_WATER_FLOW_TIME * 2) == 0)
             {
-              flows.push_back(std::make_pair(thispos, adjpos));
+              flows.push_back(std::make_tuple(thispos, adjpos, dir));
             }
           }
         }
@@ -1170,13 +1174,19 @@ void updateWater()
   // randomize the order of attempted flows to prevent directional bias
   std::random_shuffle(flows.begin(), flows.end());
   // actually flow the water the plants in the selected locations
-  for (std::pair<vect2Di, vect2Di> flowpair : flows)
+  // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, relativeDirectionOfFlow)
+  for (std::tuple<vect2Di, vect2Di, vect2Di> flowtuple : flows)
   {
     // if there is still enough of a water difference to allow a flow
-    if (getSquare(flowpair.first)->water > getSquare(flowpair.second)->water+1)
+    if (getSquare(std::get<0>(flowtuple))->water > getSquare(std::get<1>(flowtuple))->water+1)
     {
-     getSquare(flowpair.first)->water -= 1;
-     getSquare(flowpair.second)->water += 1;
+     getSquare(std::get<0>(flowtuple))->water -= 1;
+     getSquare(std::get<1>(flowtuple))->water += 1;
+     // Also push the player if the player is there
+     if (std::get<0>(flowtuple) == player_pos)
+     {
+       attemptMove(std::get<2>(flowtuple), false);
+     }
     }
   }
 }
@@ -1317,11 +1327,11 @@ int main()
     }
 
     // Tick everything
-    updateSightLines();
-    updateMotes();
     updatePlants();
     updateFire();
     updateWater();
+    updateSightLines();
+    updateMotes();
       
     // draw things
     drawEverything();
