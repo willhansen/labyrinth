@@ -12,7 +12,6 @@
 struct Square
 {
   bool wall = false;
-  bool laser = false;
   bool fire = false;
   int water = 0; // Water depth
   int plant = 0; // plant health

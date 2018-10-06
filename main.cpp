@@ -49,7 +49,6 @@ std::vector<std::shared_ptr<Mote>> motes;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
 std::vector<Line> player_sight_lines;
-std::vector<Line> lasers;
 vect2Di player_pos;
 int consecutive_laser_rounds = 0;
 vect2Di player_faced_direction = RIGHT;
@@ -675,7 +674,7 @@ void shootLaser()
       {
         break;
       }
-      squareptr->laser = true;
+      squareptr->fire = true;
       if (squareptr->mote.lock() != nullptr)
       {
         deleteMote(squareptr->mote.lock());
@@ -683,29 +682,13 @@ void shootLaser()
       if (squareptr->plant > 0)
       {
         squareptr->plant -= 1;
-        squareptr->fire = true;
+        // plants stop lasers
         break;
       }
     }
-    lasers.push_back(laser_line);
-    
   }
   // remove null pointers from the mote list
   motes.erase(std::remove(motes.begin(), motes.end(), nullptr), motes.end());
-}
-
-// remove the laser flag from all squares, and remove the laser beams
-void cleanUpLaser()
-{
-  for (int i = 0; i < static_cast<int>(lasers.size()); i++)
-  {
-    Line laser = lasers[i];
-    for (int j = 0; j < static_cast<int>(laser.mappings.size()); j++)
-    {
-      getSquare(laser.mappings[j].board_pos)->laser = false;
-    }
-  }
-  lasers.clear();
 }
 
 void updateMotes()
@@ -979,12 +962,6 @@ void drawSightMap()
       {
         forground_color = COLOR_BLACK;
         background_color = COLOR_WHITE;
-        glyph = ' ';
-      }
-      else if (board_square.laser == true)
-      {
-        forground_color = COLOR_BLACK;
-        background_color = COLOR_RED;
         glyph = ' ';
       }
       else if (board_square.mote.lock() != nullptr)
@@ -1300,7 +1277,6 @@ int main()
       break;
     else if (in == ' ')
     {
-      shootLaser();
       laser_fired = true;
     }
     else if (in == 'h')
@@ -1331,17 +1307,18 @@ int main()
     }
 
     // Tick everything
-    updatePlants();
     updateFire();
+    if (laser_fired)
+    {
+      shootLaser();
+    }
+    updatePlants();
     updateWater();
     updateSightLines();
     updateMotes();
       
     // draw things
     drawEverything();
-
-    // a laser is only shown for the round that it is fired.
-    cleanUpLaser();
   }
 
   endwin(); // End curses
