@@ -1174,7 +1174,7 @@ void updateWater()
   // randomize the order of attempted flows to prevent directional bias
   std::random_shuffle(flows.begin(), flows.end());
   // actually flow the water the plants in the selected locations
-  // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, relativeDirectionOfFlow)
+  // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, relativeDirectionOfFlowFromTheSourceSquare)
   for (std::tuple<vect2Di, vect2Di, vect2Di> flowtuple : flows)
   {
     // if there is still enough of a water difference to allow a flow
@@ -1209,23 +1209,27 @@ void updateFire()
         {
           getSquare(thispos)->plant -=1;
         }
+        // Fire without fuel can't spread
         if (getSquare(thispos)->plant == 0)
         {
           getSquare(thispos)->fire = false;
         }
-        // check every adjacent square
-        for (vect2Di dir : ORTHOGONALS)
+        else 
         {
-          vect2Di adjpos = posFromStep(thispos, dir);
-          // if the space has a plant but no fire
-          if (onBoard(adjpos) && 
-              getSquare(adjpos)->plant > 0 && 
-              getSquare(adjpos)->water == 0 && 
-              getSquare(adjpos)->fire == false)
+          // check every adjacent square
+          for (vect2Di dir : ORTHOGONALS)
           {
-            if (random(0, AVG_FIRE_SPREAD_TIME * 2) == 0)
+            vect2Di adjpos = posFromStep(thispos, dir);
+            // if the space has no water and no fire, the fire may spread
+            if (onBoard(adjpos) && 
+                getSquare(adjpos)->water == 0 && 
+                getSquare(adjpos)->wall == false && 
+                getSquare(adjpos)->fire == false)
             {
-              newFires.push_back(adjpos);
+              if (random(0, AVG_FIRE_SPREAD_TIME * 2) == 0)
+              {
+                newFires.push_back(adjpos);
+              }
             }
           }
         }
