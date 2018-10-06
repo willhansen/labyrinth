@@ -950,7 +950,7 @@ void drawSightMap()
   // Draw the player at the center of the sightmap
   int row, col;
   sightMapToScreen(vect2Di(0, 0), row, col);
-  mvaddch(row, col, '@');
+  mvaddwstr(row, col, L"@");
   
   // For every sight line
   for(int line_num = 0; line_num < static_cast<int>(player_sight_lines.size()); line_num++)
@@ -1044,26 +1044,26 @@ void drawSightMap()
     }
   }
   // where the player is facing
-  wchar_t aiming_indicator = 'o';
+  const wchar_t* aiming_indicator;
   vect2Di rel_faced_direction = player_faced_direction * player_transform.inversed();
   if (rel_faced_direction == DOWN)
   {
-    aiming_indicator = 'v';
+    aiming_indicator = L"↓";
   }
   else if (rel_faced_direction == UP)
   {
-    aiming_indicator = '^';
+    aiming_indicator = L"↑";
   }
   else if (rel_faced_direction == LEFT)
   {
-    aiming_indicator = '<';
+    aiming_indicator = L"←";
   }
   else if (rel_faced_direction == RIGHT)
   {
-    aiming_indicator = '>';
+    aiming_indicator = L"→";
   }
   sightMapToScreen(player_faced_direction, row, col);
-  mvaddch(row, col, aiming_indicator);
+  mvaddwstr(row, col, aiming_indicator);
 }
 
 void drawBoard()
