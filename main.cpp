@@ -870,7 +870,10 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
         board[next_board_pos.x][next_board_pos.y].mote.lock()->rel_player_pos = naive_squares[0] - naive_squares[step_num];
       }
 
-      if (board[next_board_pos.x][next_board_pos.y].wall == true)
+      // Walls, plants, and steam all block sight
+      if (board[next_board_pos.x][next_board_pos.y].wall == true ||
+          board[next_board_pos.x][next_board_pos.y].plant > 0 ||
+          board[next_board_pos.x][next_board_pos.y].steam > 0 )
       {
         break;
       }
