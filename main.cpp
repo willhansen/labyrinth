@@ -15,6 +15,7 @@
 #include <algorithm>
 
 const int BOARD_SIZE = 100;
+const int MEMORY_MAP_SIZE = 101;
 const int SIGHT_RADIUS = 50; 
 const bool NAIVE_VIEW = false;
 const bool PORTALS_OFF = false;
@@ -24,6 +25,8 @@ const int RED_ON_BLACK = 1;
 const int BLACK_ON_WHITE = 2;
 const int BLACK_ON_RED = 3;
 
+const wchar_t* WALL_GLYPH = L"█";
+
 const int PLANT_MAX_HEALTH = 10;
 const wchar_t* PLANT_GLYPH = L"♣";
 const int AVG_PLANT_SPAWN_TIME = 20;
@@ -31,6 +34,7 @@ const int AVG_FIRE_SPREAD_TIME = 2;
 
 const int SHALLOW_WATER_DEPTH = 3;
 const int AVG_WATER_FLOW_TIME = 1;
+const wchar_t* WATER_GLYPH = L"█";
 
 const int STEAM_PER_WATER = 100;
 const wchar_t* STEAM_GLYPH = L"▒";
@@ -48,11 +52,12 @@ Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
 void initNCurses();
 mat2Di transformFromStep(vect2Di start_pos, vect2Di step);
 Square* getSquare(vect2Di pos);
+void shiftMemoryMap(vect2Di);
 
 //TODO: make these non-global
 std::vector<std::shared_ptr<Mote>> motes;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
-std::vector<std::vector<Square>> sight_map(SIGHT_RADIUS*2+1, std::vector<Square>(SIGHT_RADIUS*2+1));
+std::vector<std::vector<const wchar_t*>> memory_map(MEMORY_MAP_SIZE, std::vector<const wchar_t*>(MEMORY_MAP_SIZE, L" "));
 std::vector<Line> player_sight_lines;
 vect2Di player_pos;
 int consecutive_laser_rounds = 0;
@@ -131,6 +136,7 @@ void attemptMove(vect2Di dp, bool voluntaryMove = true)
     vect2Di pos = line.mappings[0].board_pos;
     if (posIsWalkable(pos))
     {
+      shiftMemoryMap(dp * player_transform.inversed());
       player_transform *= transformFromStep(player_pos, dp);
       player_faced_direction *= transformFromStep(player_pos, dp);
       player_pos = pos;
@@ -342,6 +348,12 @@ void screenToBoard(int row, int col, vect2Di& pos)
   pos.x = player_pos.x - num_cols/2 + col;
   pos.y = player_pos.y + num_rows/2 - row;
   return;
+}
+
+void screenToMemoryMap(int row, int col, vect2Di& pos)
+{
+  pos.x = (MEMORY_MAP_SIZE/2 + 1) - num_cols/2 + col;
+  pos.y = (MEMORY_MAP_SIZE/2 + 1) + num_rows/2 - row;
 }
 
 // Sight map positions are relative to its center
@@ -708,6 +720,41 @@ void updateMotes()
   }
 }
 
+bool onMemoryMap(vect2Di pos)
+{
+  return (pos.x >= 0 &&
+      pos.x < MEMORY_MAP_SIZE &&
+      pos.y >= 0 &&
+      pos.y < MEMORY_MAP_SIZE);
+}
+
+void shiftMemoryMap(vect2Di player_movement)
+{
+  // The player has just moved by player_movement, so the map shifts in the opposite direction
+  // Edges are filled with spaces.
+  //
+  auto newmap = memory_map;
+  
+  // For every square of the memory map
+  for (int x=0; x < MEMORY_MAP_SIZE; x++)
+  {
+    for (int y=0; y < MEMORY_MAP_SIZE; y++)
+    {
+      if (x+player_movement.x >= 0 &&
+          x+player_movement.x < MEMORY_MAP_SIZE &&
+          y+player_movement.y >= 0 &&
+          y+player_movement.y < MEMORY_MAP_SIZE)
+      {
+        newmap[x][y] = memory_map[x+player_movement.x][y+player_movement.y];
+      }
+      else
+      {
+        newmap[x][y] = L" ";
+      }
+    }
+  }
+  memory_map = newmap;
+}
 
 void updateSightLines()
 {
@@ -937,16 +984,18 @@ void drawLine(Line line)
 
 void drawSightMap()
 {
-  // Fill background
-  attron(COLOR_PAIR(BACKGROUND_COLOR));
+  // Draw the memory map
+  attron(COLOR_PAIR(getColorPairIndex(COLOR_BLUE, COLOR_BLACK)));
   for (int row = 0; row < num_rows; row++)
   {
     for (int col = 0; col < num_cols; col++)
     {
-      mvaddwstr(row, col, OUT_OF_VIEW);
+      vect2Di memmappos;
+      screenToMemoryMap(row, col, memmappos);
+      mvaddwstr(row, col, memory_map[memmappos.x][memmappos.y]);
     }
   }
-  attroff(COLOR_PAIR(BACKGROUND_COLOR));
+  attroff(COLOR_PAIR(getColorPairIndex(COLOR_BLUE, COLOR_BLACK)));
   // Draw the player at the center of the sightmap
   int row, col;
   sightMapToScreen(vect2Di(0, 0), row, col);
@@ -973,9 +1022,9 @@ void drawSightMap()
       }
       else if (board_square.wall == true)
       {
-        forground_color = COLOR_BLACK;
-        background_color = COLOR_WHITE;
-        glyph = L" ";
+        background_color = COLOR_BLACK;
+        forground_color = COLOR_WHITE;
+        glyph = WALL_GLYPH;
       }
       else if (board_square.steam > 0)
       {
@@ -988,14 +1037,14 @@ void drawSightMap()
       }
       else if (board_square.water > 0)
       {
-        glyph = L" ";
+        glyph = WATER_GLYPH;
         if (board_square.water <= SHALLOW_WATER_DEPTH)
         {
-          background_color = COLOR_CYAN;
+          forground_color = COLOR_CYAN;
         }
         else
         {
-          background_color = COLOR_BLUE;
+          forground_color = COLOR_BLUE;
         }
 
         if (board_square.plant > 0)
@@ -1038,6 +1087,13 @@ void drawSightMap()
       attron(COLOR_PAIR(getColorPairIndex(forground_color, background_color)));
       mvaddwstr(row, col, glyph);
       attroff(COLOR_PAIR(getColorPairIndex(forground_color, background_color)));
+      // Put the drawn glyph on the memory map
+      vect2Di memmappos;
+      screenToMemoryMap(row, col, memmappos);
+      if (onMemoryMap(memmappos))
+      {
+        memory_map[memmappos.x][memmappos.y] = glyph;
+      }
       // if we just drew a wall, done with this line
       if (board_square.wall == true)
         break;
