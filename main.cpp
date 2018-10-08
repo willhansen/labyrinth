@@ -34,7 +34,7 @@ const int AVG_FIRE_SPREAD_TIME = 2;
 
 const int SHALLOW_WATER_DEPTH = 3;
 const int AVG_WATER_FLOW_TIME = 1;
-const wchar_t* WATER_GLYPH = L"█";
+const wchar_t* WATER_GLYPH = L"≈";
 
 const int STEAM_PER_WATER = 100;
 const wchar_t* STEAM_GLYPH = L"▒";
@@ -246,7 +246,7 @@ void tickMote(std::shared_ptr<Mote> moteptr)
     if (step_line.mappings.size() > 0)
     {
       vect2Di pos = step_line.mappings[0].board_pos;
-      if (posIsEmpty(pos))
+      if (posIsWalkable(pos))
       {
         moteptr->rel_player_pos -= step;
         moteptr->rel_player_pos *= transformFromStep(moteptr->pos, step);
@@ -587,11 +587,11 @@ void initBoard()
   makePortalPair2(vect2Di(31, 7), LEFT, vect2Di(32, 6), DOWN, false);
   makePortalPair2(vect2Di(31, 6), LEFT, vect2Di(31, 6), DOWN, false);
 
-  //createMote(vect2Di(10, 20));
-  //createMote(vect2Di(10, 21));
-  //createMote(vect2Di(10, 22));
-  //createMote(vect2Di(11, 20));
-  //createMote(vect2Di(11, 21));
+  createMote(vect2Di(10, 20));
+  createMote(vect2Di(10, 21));
+  createMote(vect2Di(10, 22));
+  createMote(vect2Di(11, 20));
+  createMote(vect2Di(11, 21));
 
   /*
   board[45][13].wall = true;
