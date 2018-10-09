@@ -252,7 +252,9 @@ void tickMote(std::shared_ptr<Mote> moteptr)
       if (posIsWalkable(pos))
       {
         moteptr->rel_player_pos -= step;
-        moteptr->rel_player_pos *= transformFromStep(moteptr->pos, step);
+        mat2Di T = transformFromStep(moteptr->pos, step);
+        moteptr->rel_player_pos *= T;
+        moteptr->faced_direction *= T;
         setMotePos(moteptr, pos);
       }
     }
@@ -1038,7 +1040,7 @@ void drawSightMap()
       else if (board_square.mote.lock() != nullptr)
       {
         // draw mote
-        glyph = MOTE_GLYPHS[((4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+        glyph = MOTE_GLYPHS[(board_square.mote.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
       }
       else if (board_square.water > 0)
       {
