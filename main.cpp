@@ -27,6 +27,9 @@ const int BLACK_ON_RED = 3;
 
 const wchar_t* WALL_GLYPH = L"█";
 
+// These are in order from RIGHT going ccw
+const std::vector<const wchar_t*> MOTE_GLYPHS = {L"▶", L"▲", L"◀", L"▼"};
+
 const int PLANT_MAX_HEALTH = 10;
 const wchar_t* PLANT_GLYPH = L"♣";
 const int AVG_PLANT_SPAWN_TIME = 20;
@@ -904,6 +907,8 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
 
     square_map.line_pos = naive_squares[step_num] - naive_squares[0];
 
+    square_map.ccw_rotations = transform.ccwRotations();
+
     square_map.color = color;
 
     line.mappings.push_back(square_map);
@@ -1033,7 +1038,7 @@ void drawSightMap()
       else if (board_square.mote.lock() != nullptr)
       {
         // draw mote
-        glyph = L"#";
+        glyph = MOTE_GLYPHS[((4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
       }
       else if (board_square.water > 0)
       {

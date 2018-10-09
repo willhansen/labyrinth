@@ -13,6 +13,9 @@ struct SquareMap
   // relative to the line's starting position
   vect2Di line_pos;
 
+  // Number of counter-clockwise rotations from the default world rotation
+  int ccw_rotations = 0;
+
   // A color tint from going through portals
   int color = COLOR_WHITE;
 };

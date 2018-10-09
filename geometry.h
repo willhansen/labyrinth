@@ -190,6 +190,12 @@ struct mat2Di
     m21=c.m21;
     m22=c.m22;
   }
+
+  // This should really only work with combinations of simple 90 degree rotators
+  int ccwRotations()
+  {
+    return (vect2Di(1, 0) * *this).ccwRotations();
+  }
 };
 
 vect2Di vect2Di::operator* (struct mat2Di M)
@@ -205,6 +211,7 @@ void vect2Di::operator*= (struct mat2Di M)
   this->x = c.x;
   this->y = c.y;
 }
+
 
 const vect2Di LEFT = vect2Di(-1, 0);
 const vect2Di RIGHT = vect2Di(1, 0);
