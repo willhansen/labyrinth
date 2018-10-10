@@ -30,6 +30,8 @@ const wchar_t* WALL_GLYPH = L"█";
 // These are in order from RIGHT going ccw
 const std::vector<const wchar_t*> MOTE_GLYPHS = {L"▶", L"▲", L"◀", L"▼"};
 
+const std::vector<const wchar_t*> ARROW_GLYPHS = { L"→", L"↑", L"←", L"↓"};
+
 const int PLANT_MAX_HEALTH = 10;
 const wchar_t* PLANT_GLYPH = L"♣";
 const int AVG_PLANT_SPAWN_TIME = 20;
@@ -59,6 +61,7 @@ void shiftMemoryMap(vect2Di);
 
 //TODO: make these non-global
 std::vector<std::shared_ptr<Mote>> motes;
+std::vector<std::shared_ptr<Arrow>> arrows;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<const wchar_t*>> memory_map(MEMORY_MAP_SIZE, std::vector<const wchar_t*>(MEMORY_MAP_SIZE, L" "));
 std::vector<Line> player_sight_lines;
@@ -88,6 +91,7 @@ bool posIsEmpty(vect2Di pos)
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
       squareptr->mote.lock() != nullptr || 
+      squareptr->arrow.lock() != nullptr || 
       squareptr->wall != false || 
       squareptr->water != 0 ||
       squareptr->plant != 0 ||
@@ -108,10 +112,30 @@ bool posIsWalkable(vect2Di pos)
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
       squareptr->mote.lock() != nullptr || 
+      squareptr->arrow.lock() != nullptr || 
       squareptr->wall != false || 
       squareptr->water > SHALLOW_WATER_DEPTH ||
       squareptr->plant != 0 ||
       squareptr->fire != false ||
+      pos == player_pos)
+  {
+    return false;
+  }
+  else
+  {
+    return true;
+  }
+}
+
+bool posIsFlyable(vect2Di pos)
+{
+  Square* squareptr = getSquare(pos);
+  // Square must be empty and also actually be there
+  if (squareptr == nullptr || 
+      squareptr->mote.lock() != nullptr || 
+      squareptr->arrow.lock() != nullptr || 
+      squareptr->wall != false || 
+      squareptr->plant != 0 ||
       pos == player_pos)
   {
     return false;
@@ -190,6 +214,24 @@ void deleteMote(std::shared_ptr<Mote> moteptr)
   motes.erase(std::remove(motes.begin(), motes.end(), moteptr), motes.end());
 }
 
+void deleteArrow(std::shared_ptr<Arrow> arrowptr)
+{
+  // If 2 shared pointers are equal if they point to the same arrow, this should work
+  arrows.erase(std::remove(arrows.begin(), arrows.end(), arrowptr), arrows.end());
+}
+
+// This assumes validity checks have been done, and just handles the pointer movements
+void setArrowPos(std::shared_ptr<Arrow> arrowptr, vect2Di new_pos)
+{
+  Square* newSquareptr = getSquare(new_pos);
+
+  // this square exists
+  Square* oldSquareptr = getSquare(arrowptr->pos);
+  newSquareptr->arrow = oldSquareptr->arrow;
+  oldSquareptr->arrow.reset();
+
+  arrowptr->pos = new_pos;
+}
 
 void setMotePos(std::shared_ptr<Mote> moteptr, vect2Di new_pos)
 {
@@ -670,6 +712,38 @@ std::vector<vect2Di> naiveLaserSquares(int t, double phase)
   return laser_squares;
 }
 
+void createArrow(vect2Di world_pos, vect2Di direction)
+{
+  Square* squareptr = getSquare(world_pos);
+  // Square must be empty
+  if (squareptr == nullptr || !posIsWalkable(world_pos))
+  {
+    return;
+  }
+  std::shared_ptr<Arrow> arrowptr = std::make_shared<Arrow>();
+  arrowptr->pos = world_pos;
+  arrowptr->faced_direction = direction;
+  squareptr->arrow = arrowptr;
+  arrows.push_back(arrowptr);
+}
+
+// attempt to spawn an arrow just in front of the player
+void shootArrow()
+{
+  // first need to find the square and direction that is directly in front of the player
+  vect2Di step = player_faced_direction;
+  Line step_line = lineCast(player_pos, step);
+  if (step_line.mappings.size() > 0)
+  {
+    vect2Di newpos = step_line.mappings[0].board_pos;
+    if (posIsFlyable(newpos))
+    {
+      mat2Di T = transformFromStep(player_pos, step);
+      createArrow(newpos, player_faced_direction * T);
+    }
+  }
+}
+
 // make the laser beams, kill motes, and mark squares as laser
 void shootLaser()
 {
@@ -705,6 +779,10 @@ void shootLaser()
       {
         deleteMote(squareptr->mote.lock());
       }
+      if (squareptr->arrow.lock() != nullptr)
+      {
+        deleteArrow(squareptr->arrow.lock());
+      }
       if (squareptr->plant > 0)
       {
         squareptr->plant -= 1;
@@ -715,6 +793,52 @@ void shootLaser()
   }
   // remove null pointers from the mote list
   motes.erase(std::remove(motes.begin(), motes.end(), nullptr), motes.end());
+}
+
+void updateArrows()
+{
+  std::vector<std::shared_ptr<Arrow>> todelete;
+  for (auto arrowptr : arrows)
+  {
+    vect2Di step = arrowptr->faced_direction;
+    Line step_line = lineCast(arrowptr->pos, step);
+    if (step_line.mappings.size() > 0)
+    {
+      vect2Di newpos = step_line.mappings[0].board_pos;
+      if (posIsFlyable(newpos))
+      {
+        mat2Di T = transformFromStep(arrowptr->pos, step);
+        arrowptr->faced_direction *= T;
+        setArrowPos(arrowptr, newpos);
+      }
+      // if the new position is not clear, the arrow dies, and maybe does some damage
+      else
+      {
+        if (getSquare(newpos)->plant > 0)
+        {
+          getSquare(newpos)->plant -= 1;
+        }
+        else if (getSquare(newpos)->wall == true)
+        {
+          // can't damage a wall with a simple arrow
+        }
+        else if (getSquare(newpos)->mote.lock() != nullptr)
+        {
+          deleteMote(getSquare(newpos)->mote.lock());
+        }
+        else if (getSquare(newpos)->arrow.lock() != nullptr)
+        {
+          todelete.push_back(getSquare(newpos)->arrow.lock());
+        }
+        // no mater what the arrow has hit, the arrow dies
+        todelete.push_back(arrowptr);
+      }
+    }
+  }
+  for (auto arrowptr : todelete)
+  {
+    deleteArrow(arrowptr);
+  }
 }
 
 void updateMotes()
@@ -1041,6 +1165,11 @@ void drawSightMap()
       {
         // draw mote
         glyph = MOTE_GLYPHS[(board_square.mote.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+      }
+      else if (board_square.arrow.lock() != nullptr)
+      {
+        // draw arrow
+        glyph = ARROW_GLYPHS[(board_square.arrow.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
       }
       else if (board_square.water > 0)
       {
@@ -1459,6 +1588,10 @@ int main()
     {
       laser_fired = true;
     }
+    else if (in == 'f')
+    {
+      shootArrow();
+    }
     else if (in == 'h')
       attemptMove(vect2Di(-1, 0)*player_transform);
     else if (in == 'j')
@@ -1497,6 +1630,7 @@ int main()
     updateSteam();
     updateSightLines();
     updateMotes();
+    updateArrows();
       
     // draw things
     drawEverything();

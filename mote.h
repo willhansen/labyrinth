@@ -12,4 +12,10 @@ struct Mote
   vect2Di faced_direction = LEFT; // This is so there is consistency when stepping through portals
 };
 
+struct Arrow
+{
+  vect2Di pos;
+  vect2Di faced_direction = LEFT; // This is so there is consistency when stepping through portals
+};
+
 #endif
