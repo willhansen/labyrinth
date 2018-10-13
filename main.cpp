@@ -2,7 +2,7 @@
 #include "square.h"
 #include "line.h"
 #include "portal.h"
-#include "mote.h"
+#include "entity.h"
 #include "geometry.h"
 
 #include <ncursesw/ncurses.h>			/* ncurses.h includes stdio.h */  
@@ -60,8 +60,7 @@ Square* getSquare(vect2Di pos);
 void shiftMemoryMap(vect2Di);
 
 //TODO: make these non-global
-std::vector<std::shared_ptr<Mote>> motes;
-std::vector<std::shared_ptr<Arrow>> arrows;
+std::vector<std::shared_ptr<Entity>> entities;
 std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
 std::vector<std::vector<const wchar_t*>> memory_map(MEMORY_MAP_SIZE, std::vector<const wchar_t*>(MEMORY_MAP_SIZE, L" "));
 std::vector<Line> player_sight_lines;
@@ -90,8 +89,7 @@ bool posIsEmpty(vect2Di pos)
   Square* squareptr = getSquare(pos);
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
-      squareptr->mote.lock() != nullptr || 
-      squareptr->arrow.lock() != nullptr || 
+      squareptr->entity.lock() != nullptr || 
       squareptr->wall != false || 
       squareptr->water != 0 ||
       squareptr->plant != 0 ||
@@ -111,8 +109,7 @@ bool posIsWalkable(vect2Di pos)
   Square* squareptr = getSquare(pos);
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
-      squareptr->mote.lock() != nullptr || 
-      squareptr->arrow.lock() != nullptr || 
+      squareptr->entity.lock() != nullptr || 
       squareptr->wall != false || 
       squareptr->water > SHALLOW_WATER_DEPTH ||
       squareptr->plant != 0 ||
@@ -132,8 +129,7 @@ bool posIsFlyable(vect2Di pos)
   Square* squareptr = getSquare(pos);
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
-      squareptr->mote.lock() != nullptr || 
-      squareptr->arrow.lock() != nullptr || 
+      squareptr->entity.lock() != nullptr || 
       squareptr->wall != false || 
       squareptr->plant != 0 ||
       pos == player_pos)
@@ -179,11 +175,9 @@ void createMote(vect2Di pos)
   {
     return;
   }
-  std::shared_ptr<Mote> moteptr = std::make_shared<Mote>();
-  moteptr->pos = pos;
-  moteptr->rel_player_pos = vect2Di(0, 0);
-  squareptr->mote = moteptr;
-  motes.push_back(moteptr);
+  std::shared_ptr<Entity> moteptr = std::make_shared<Entity>(Entity::mote(pos));
+  squareptr->entity = moteptr;
+  entities.push_back(moteptr);
 }
 
 void createPlant(vect2Di pos)
@@ -208,47 +202,26 @@ void createWater(vect2Di pos, int depth)
   squareptr->water = depth;
 }
 
-void deleteMote(std::shared_ptr<Mote> moteptr)
+void deleteEntity(std::shared_ptr<Entity> entity)
 {
   // If 2 shared pointers are equal if they point to the same mote, this should work
-  motes.erase(std::remove(motes.begin(), motes.end(), moteptr), motes.end());
+  entities.erase(std::remove(entities.begin(), entities.end(), entity), entities.end());
 }
 
-void deleteArrow(std::shared_ptr<Arrow> arrowptr)
-{
-  // If 2 shared pointers are equal if they point to the same arrow, this should work
-  arrows.erase(std::remove(arrows.begin(), arrows.end(), arrowptr), arrows.end());
-}
 
 // This assumes validity checks have been done, and just handles the pointer movements
-void setArrowPos(std::shared_ptr<Arrow> arrowptr, vect2Di new_pos)
+void moveEntity(std::shared_ptr<Entity> entityptr, vect2Di new_pos)
 {
   Square* newSquareptr = getSquare(new_pos);
 
   // this square exists
-  Square* oldSquareptr = getSquare(arrowptr->pos);
-  newSquareptr->arrow = oldSquareptr->arrow;
-  oldSquareptr->arrow.reset();
+  Square* oldSquareptr = getSquare(entityptr->pos);
+  newSquareptr->entity = oldSquareptr->entity;
+  oldSquareptr->entity.reset();
 
-  arrowptr->pos = new_pos;
+  entityptr->pos = new_pos;
 }
 
-void setMotePos(std::shared_ptr<Mote> moteptr, vect2Di new_pos)
-{
-  Square* newSquareptr = getSquare(new_pos);
-  // Square must be empty
-  if (newSquareptr == nullptr || newSquareptr->mote.lock() != nullptr || newSquareptr->wall != false || new_pos == player_pos)
-  {
-    return;
-  }
-
-  // this square exists
-  Square* oldSquareptr = getSquare(moteptr->pos);
-  newSquareptr->mote = oldSquareptr->mote;
-  oldSquareptr->mote.reset();
-
-  moteptr->pos = new_pos;
-}
 
 vect2Di firstStepInDirection(vect2Di far_step)
 {
@@ -280,29 +253,6 @@ vect2Di firstStepInDirection(vect2Di far_step)
   }
 }
 
-void tickMote(std::shared_ptr<Mote> moteptr)
-{
-  // The mote wants to move towards the player
-  // But only if it has a destination
-  if (moteptr->rel_player_pos != ZERO)
-  {
-    vect2Di step = firstStepInDirection(moteptr->rel_player_pos);
-    Line step_line = lineCast(moteptr->pos, step);
-    if (step_line.mappings.size() > 0)
-    {
-      vect2Di pos = step_line.mappings[0].board_pos;
-      if (posIsWalkable(pos))
-      {
-        moteptr->rel_player_pos -= step;
-        mat2Di T = transformFromStep(moteptr->pos, step);
-        moteptr->rel_player_pos *= T;
-        moteptr->faced_direction *= T;
-        setMotePos(moteptr, pos);
-      }
-    }
-  }
-}
-
 std::shared_ptr<Portal>* getPortal(Square& square, const vect2Di& step)
 {
   std::shared_ptr<Portal>* portalptrptr = nullptr;
@@ -329,6 +279,7 @@ std::shared_ptr<Portal>* getPortal(Square& square, const vect2Di& step)
 }
 
 // TODO: allow double start and end positions in order to allow slight perturbations to avoid needing to break ties.
+// This returns all the squares that fall on the line between (0, 0) and the given point the points are at the center of squares.  All squares on the line are orthogonally connected exactly once in a chain, with tie-breaking for diagonals.
 std::vector<vect2Di> orthogonalBresneham(vect2Di goal_pos)
 {
   // this line starts at zero
@@ -720,11 +671,9 @@ void createArrow(vect2Di world_pos, vect2Di direction)
   {
     return;
   }
-  std::shared_ptr<Arrow> arrowptr = std::make_shared<Arrow>();
-  arrowptr->pos = world_pos;
-  arrowptr->faced_direction = direction;
-  squareptr->arrow = arrowptr;
-  arrows.push_back(arrowptr);
+  std::shared_ptr<Entity> arrowptr = std::make_shared<Entity>(Entity::arrow(world_pos, direction));
+  squareptr->entity = arrowptr;
+  entities.push_back(arrowptr);
 }
 
 // attempt to spawn an arrow just in front of the player
@@ -775,13 +724,9 @@ void shootLaser()
         break;
       }
       squareptr->fire = true;
-      if (squareptr->mote.lock() != nullptr)
+      if (squareptr->entity.lock() != nullptr)
       {
-        deleteMote(squareptr->mote.lock());
-      }
-      if (squareptr->arrow.lock() != nullptr)
-      {
-        deleteArrow(squareptr->arrow.lock());
+        deleteEntity(squareptr->entity.lock());
       }
       if (squareptr->plant > 0)
       {
@@ -791,28 +736,70 @@ void shootLaser()
       }
     }
   }
-  // remove null pointers from the mote list
-  motes.erase(std::remove(motes.begin(), motes.end(), nullptr), motes.end());
 }
 
-void updateArrows()
+// if the entity knows where the player is, face the player
+void facePlayer(std::shared_ptr<Entity> entityptr)
 {
-  std::vector<std::shared_ptr<Arrow>> todelete;
-  for (auto arrowptr : arrows)
+  vect2Di dir = entityptr->rel_player_pos;
+  if (dir != ZERO)
   {
-    vect2Di step = arrowptr->faced_direction;
-    Line step_line = lineCast(arrowptr->pos, step);
+    vect2Di newfaced;
+    // if along x axis
+    if (std::abs(dir.x) > std::abs(dir.y) || (std::abs(dir.x) == std::abs(dir.y) && random(0, 2) == 0)) // tiebreak random because why not
+    {
+      if (dir.x > 0)
+      {
+        newfaced = RIGHT;
+      }
+      else
+      {
+        newfaced = LEFT;
+      }
+    }
+    else 
+    {
+      if (dir.y > 0)
+      {
+        newfaced = UP;
+      }
+      else
+      {
+        newfaced = DOWN;
+      }
+    }
+    entityptr->faced_direction = newfaced;
+  }
+}
+
+void updateEntities()
+{
+  std::vector<std::shared_ptr<Entity>> todelete;
+  for (auto entityptr : entities)
+  {
+    // face the player if can turn
+    if (entityptr->homing == true)
+    {
+      facePlayer(entityptr);
+    }
+    vect2Di step = entityptr->faced_direction;
+    Line step_line = lineCast(entityptr->pos, step);
     if (step_line.mappings.size() > 0)
     {
       vect2Di newpos = step_line.mappings[0].board_pos;
       if (posIsFlyable(newpos))
       {
-        mat2Di T = transformFromStep(arrowptr->pos, step);
-        arrowptr->faced_direction *= T;
-        setArrowPos(arrowptr, newpos);
+        mat2Di T = transformFromStep(entityptr->pos, step);
+        entityptr->faced_direction *= T;
+        moveEntity(entityptr, newpos);
+        if (entityptr->rel_player_pos != ZERO)
+        {
+          entityptr->rel_player_pos -= step;
+          entityptr->rel_player_pos *= T;
+        }
       }
       // if the new position is not clear, the arrow dies, and maybe does some damage
-      else
+      else if (entityptr->die_on_touch)
       {
         if (getSquare(newpos)->plant > 0)
         {
@@ -822,30 +809,18 @@ void updateArrows()
         {
           // can't damage a wall with a simple arrow
         }
-        else if (getSquare(newpos)->mote.lock() != nullptr)
+        else if (getSquare(newpos)->entity.lock() != nullptr)
         {
-          deleteMote(getSquare(newpos)->mote.lock());
-        }
-        else if (getSquare(newpos)->arrow.lock() != nullptr)
-        {
-          todelete.push_back(getSquare(newpos)->arrow.lock());
+          todelete.push_back(getSquare(newpos)->entity.lock());
         }
         // no mater what the arrow has hit, the arrow dies
-        todelete.push_back(arrowptr);
+        todelete.push_back(entityptr);
       }
     }
   }
-  for (auto arrowptr : todelete)
+  for (auto entityptr : todelete)
   {
-    deleteArrow(arrowptr);
-  }
-}
-
-void updateMotes()
-{
-  for (auto moteptr : motes)
-  {
-    tickMote(moteptr);
+    deleteEntity(entityptr);
   }
 }
 
@@ -1043,9 +1018,9 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
     if (is_sight_line)
     {
       // if there is a mote here, it wants to go to the source of the sight line
-      if (board[next_board_pos.x][next_board_pos.y].mote.lock() != nullptr)
+      if (board[next_board_pos.x][next_board_pos.y].entity.lock() != nullptr)
       {
-        board[next_board_pos.x][next_board_pos.y].mote.lock()->rel_player_pos = naive_squares[0] - naive_squares[step_num];
+        board[next_board_pos.x][next_board_pos.y].entity.lock()->rel_player_pos = naive_squares[0] - naive_squares[step_num];
       }
 
       // Walls, plants, and steam all block sight
@@ -1161,15 +1136,21 @@ void drawSightMap()
       {
         glyph = STEAM_GLYPH;
       }
-      else if (board_square.mote.lock() != nullptr)
+      else if (board_square.entity.lock() != nullptr)
       {
-        // draw mote
-        glyph = MOTE_GLYPHS[(board_square.mote.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
-      }
-      else if (board_square.arrow.lock() != nullptr)
-      {
-        // draw arrow
-        glyph = ARROW_GLYPHS[(board_square.arrow.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+        // if we are dealing with a mote
+        if (board_square.entity.lock()->homing == true)
+        {
+
+          // draw mote
+          // Need to account for rotation of the entity, portals, and the player
+          glyph = MOTE_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+        }
+        else // if we are dealing with an arrow
+        {
+          // draw arrow
+          glyph = ARROW_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+        }
       }
       else if (board_square.water > 0)
       {
@@ -1278,7 +1259,7 @@ void drawBoard()
         glyph = ' ';
         color = 2;
       }
-      else if (board[pos.x][pos.y].mote.lock() != nullptr)
+      else if (board[pos.x][pos.y].entity.lock() != nullptr)
       {
         color = BLACK_ON_WHITE; 
         glyph = '*';
@@ -1629,8 +1610,7 @@ int main()
     updateWater();
     updateSteam();
     updateSightLines();
-    updateMotes();
-    updateArrows();
+    updateEntities();
       
     // draw things
     drawEverything();

@@ -3,7 +3,7 @@
 
 #include "portal.h"
 #include "line.h"
-#include "mote.h"
+#include "entity.h"
 #include <utility>
 #include <memory>
 #include <list>
@@ -23,8 +23,7 @@ struct Square
   std::shared_ptr<Portal> up_portal;
   std::shared_ptr<Portal> left_portal;
   std::shared_ptr<Portal> down_portal;
-  std::weak_ptr<Mote> mote;
-  std::weak_ptr<Arrow> arrow;
+  std::weak_ptr<Entity> entity;
 };
 
 #endif
