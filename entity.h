@@ -18,7 +18,7 @@ struct Entity
   bool die_on_touch = false;
   int max_cooldown = 4;
   int cooldown = 0;
-  int detection_range=5;
+  int detection_range=10;
 
   static Entity arrow(vect2Di pos, vect2Di dir)
   {
@@ -41,7 +41,11 @@ struct Entity
 
   static Entity turret(vect2Di pos, vect2Di dir)
   {
-    // stub for now
+    Entity turret;
+    turret.pos = pos;
+    turret.faced_direction = dir;
+    turret.can_shoot = true;
+    return turret;
   }
 };
 

@@ -1,3 +1,4 @@
+
 #define _XOPEN_SOURCE_EXTENDED 1
 #include "square.h"
 #include "line.h"
@@ -31,6 +32,7 @@ const wchar_t* WALL_GLYPH = L"█";
 const std::vector<const wchar_t*> MOTE_GLYPHS = {L"▶", L"▲", L"◀", L"▼"};
 
 const std::vector<const wchar_t*> ARROW_GLYPHS = { L"→", L"↑", L"←", L"↓"};
+const std::vector<const wchar_t*> TURRET_GLYPHS = { L"→", L"↑", L"←", L"↓"};
 
 const int PLANT_MAX_HEALTH = 10;
 const wchar_t* PLANT_GLYPH = L"♣";
@@ -667,13 +669,26 @@ void createArrow(vect2Di world_pos, vect2Di direction)
 {
   Square* squareptr = getSquare(world_pos);
   // Square must be empty
-  if (squareptr == nullptr || !posIsWalkable(world_pos))
+  if (squareptr == nullptr || !posIsFlyable(world_pos))
   {
     return;
   }
   std::shared_ptr<Entity> arrowptr = std::make_shared<Entity>(Entity::arrow(world_pos, direction));
   squareptr->entity = arrowptr;
   entities.push_back(arrowptr);
+}
+
+void createTurret(vect2Di world_pos, vect2Di direction)
+{
+  Square* squareptr = getSquare(world_pos);
+  // Square must be empty
+  if (squareptr == nullptr || !posIsWalkable(world_pos))
+  {
+    return;
+  }
+  std::shared_ptr<Entity> turretptr = std::make_shared<Entity>(Entity::turret(world_pos, direction));
+  squareptr->entity = turretptr;
+  entities.push_back(turretptr);
 }
 
 // attempt to spawn an arrow just in front of the player
@@ -689,6 +704,23 @@ void shootArrow()
     {
       mat2Di T = transformFromStep(player_pos, step);
       createArrow(newpos, player_faced_direction * T);
+    }
+  }
+}
+
+// attempt to spawn a turret just in front of the player
+void buildTurret()
+{
+  // first need to find the square and direction that is directly in front of the player
+  vect2Di step = player_faced_direction;
+  Line step_line = lineCast(player_pos, step);
+  if (step_line.mappings.size() > 0)
+  {
+    vect2Di newpos = step_line.mappings[0].board_pos;
+    if (posIsWalkable(newpos))
+    {
+      mat2Di T = transformFromStep(player_pos, step);
+      createTurret(newpos, player_faced_direction * T);
     }
   }
 }
@@ -782,39 +814,74 @@ void updateEntities()
     {
       facePlayer(entityptr);
     }
-    vect2Di step = entityptr->faced_direction;
-    Line step_line = lineCast(entityptr->pos, step);
-    if (step_line.mappings.size() > 0)
+    if (entityptr->moving == true)
     {
-      vect2Di newpos = step_line.mappings[0].board_pos;
-      if (posIsFlyable(newpos))
+      vect2Di step = entityptr->faced_direction;
+      Line step_line = lineCast(entityptr->pos, step);
+      if (step_line.mappings.size() > 0)
       {
-        mat2Di T = transformFromStep(entityptr->pos, step);
-        entityptr->faced_direction *= T;
-        moveEntity(entityptr, newpos);
-        if (entityptr->rel_player_pos != ZERO)
+        vect2Di newpos = step_line.mappings[0].board_pos;
+        if (posIsFlyable(newpos))
         {
-          entityptr->rel_player_pos -= step;
-          entityptr->rel_player_pos *= T;
+          mat2Di T = transformFromStep(entityptr->pos, step);
+          entityptr->faced_direction *= T;
+          moveEntity(entityptr, newpos);
+          if (entityptr->rel_player_pos != ZERO)
+          {
+            entityptr->rel_player_pos -= step;
+            entityptr->rel_player_pos *= T;
+          }
+        }
+        // if the new position is not clear, the arrow dies, and maybe does some damage
+        else if (entityptr->die_on_touch)
+        {
+          if (getSquare(newpos)->plant > 0)
+          {
+            getSquare(newpos)->plant -= 1;
+          }
+          else if (getSquare(newpos)->wall == true)
+          {
+            // can't damage a wall with a simple arrow
+          }
+          else if (getSquare(newpos)->entity.lock() != nullptr)
+          {
+            todelete.push_back(getSquare(newpos)->entity.lock());
+          }
+          // no mater what the arrow has hit, the arrow dies
+          todelete.push_back(entityptr);
         }
       }
-      // if the new position is not clear, the arrow dies, and maybe does some damage
-      else if (entityptr->die_on_touch)
+    }
+    if (entityptr->can_shoot)
+    {
+      if (entityptr->cooldown > 0)
       {
-        if (getSquare(newpos)->plant > 0)
+        entityptr->cooldown -= 1; 
+      }
+      else
+      {
+        // raycast ahead of the entity, and if it sees another entity, shoot it and set the cooldown
+        vect2Di step = entityptr->faced_direction * entityptr->detection_range;
+        Line detection_line = lineCast(entityptr->pos, step);
+        for (SquareMap mapping : detection_line.mappings)
         {
-          getSquare(newpos)->plant -= 1;
+          Square* squareptr = getSquare(mapping.board_pos);
+          if (squareptr->wall == true)
+          {
+            break;
+          }
+          else if (squareptr->entity.lock() != nullptr || mapping.board_pos == player_pos)
+          {
+            // if there is space in front of the entity
+            if (posIsFlyable(detection_line.mappings[0].board_pos))
+            {
+              // shoot an arrow
+              mat2Di T = transformFromStep(entityptr->pos, entityptr->faced_direction);
+              createArrow(detection_line.mappings[0].board_pos, entityptr->faced_direction * T);
+              entityptr->cooldown = entityptr->max_cooldown;
+            }
+          }
         }
-        else if (getSquare(newpos)->wall == true)
-        {
-          // can't damage a wall with a simple arrow
-        }
-        else if (getSquare(newpos)->entity.lock() != nullptr)
-        {
-          todelete.push_back(getSquare(newpos)->entity.lock());
-        }
-        // no mater what the arrow has hit, the arrow dies
-        todelete.push_back(entityptr);
       }
     }
   }
@@ -1145,6 +1212,12 @@ void drawSightMap()
           // draw mote
           // Need to account for rotation of the entity, portals, and the player
           glyph = MOTE_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+        }
+        else if (board_square.entity.lock()->can_shoot == true) // if we're dealing with a turret
+        {
+          forground_color = COLOR_BLACK;
+          background_color = COLOR_WHITE;
+          glyph = TURRET_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
         }
         else // if we are dealing with an arrow
         {
@@ -1572,6 +1645,10 @@ int main()
     else if (in == 'f')
     {
       shootArrow();
+    }
+    else if (in == 'b')
+    {
+      buildTurret();
     }
     else if (in == 'h')
       attemptMove(vect2Di(-1, 0)*player_transform);
