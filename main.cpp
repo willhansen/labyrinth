@@ -587,11 +587,11 @@ void initBoard()
   makePortalPair2(vect2Di(31, 7), LEFT, vect2Di(32, 6), DOWN, false);
   makePortalPair2(vect2Di(31, 6), LEFT, vect2Di(31, 6), DOWN, false);
 
-  createMote(vect2Di(10, 20));
-  createMote(vect2Di(10, 21));
-  createMote(vect2Di(10, 22));
-  createMote(vect2Di(11, 20));
-  createMote(vect2Di(11, 21));
+  //createMote(vect2Di(10, 20));
+  //createMote(vect2Di(10, 21));
+  //createMote(vect2Di(10, 22));
+  //createMote(vect2Di(11, 20));
+  //createMote(vect2Di(11, 21));
 
   /*
   board[45][13].wall = true;
@@ -807,8 +807,10 @@ void facePlayer(std::shared_ptr<Entity> entityptr)
 void updateEntities()
 {
   std::vector<std::shared_ptr<Entity>> todelete;
-  for (auto entityptr : entities)
+  int i = 0;
+  while (i < static_cast<int>(entities.size()))
   {
+    std::shared_ptr<Entity> entityptr = entities[i];
     // face the player if can turn
     if (entityptr->homing == true)
     {
@@ -879,11 +881,13 @@ void updateEntities()
               mat2Di T = transformFromStep(entityptr->pos, entityptr->faced_direction);
               createArrow(detection_line.mappings[0].board_pos, entityptr->faced_direction * T);
               entityptr->cooldown = entityptr->max_cooldown;
+              break;
             }
           }
         }
       }
     }
+    i++;
   }
   for (auto entityptr : todelete)
   {
