@@ -1079,7 +1079,7 @@ Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
 
     square_map.line_pos = naive_squares[step_num] - naive_squares[0];
 
-    square_map.ccw_rotations = transform.ccwRotations();
+    square_map.transform = transform;
 
     square_map.color = color;
 
@@ -1209,24 +1209,25 @@ void drawSightMap()
       }
       else if (board_square.entity.lock() != nullptr)
       {
+        int ccw_rotations_from_right = ((board_square.entity.lock()->faced_direction * mapping.transform.inversed()).ccwRotations() + player_transform.inversed().ccwRotations())%4;
         // if we are dealing with a mote
         if (board_square.entity.lock()->homing == true)
         {
 
           // draw mote
           // Need to account for rotation of the entity, portals, and the player
-          glyph = MOTE_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+          glyph = MOTE_GLYPHS[ccw_rotations_from_right];
         }
         else if (board_square.entity.lock()->can_shoot == true) // if we're dealing with a turret
         {
           forground_color = COLOR_BLACK;
           background_color = COLOR_WHITE;
-          glyph = TURRET_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+          glyph = TURRET_GLYPHS[ccw_rotations_from_right];
         }
         else // if we are dealing with an arrow
         {
           // draw arrow
-          glyph = ARROW_GLYPHS[(board_square.entity.lock()->faced_direction.ccwRotations() + (4-mapping.ccw_rotations) + player_transform.inversed().ccwRotations())%4];
+          glyph = ARROW_GLYPHS[ccw_rotations_from_right];
         }
       }
       else if (board_square.water > 0)
