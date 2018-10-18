@@ -50,6 +50,7 @@ const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const wchar_t* OUT_OF_VIEW = L" ";
 
 
+std::pair<std::shared_ptr<Board>, vect2Di> posFromStep(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di step);
 Line curveCast(std::shared_ptr<Board> board, std::vector<vect2Di> naive_squares, bool is_sight_line=false);
 void drawEverything();
 void updateSightLines();
@@ -59,7 +60,7 @@ mat2Di transformFromStep(std::shared_ptr<Board> start_board, vect2Di start_pos, 
 void shiftMemoryMap(vect2Di);
 
 //TODO: make these non-global
-std::vector<std::shared_ptr<Board>> boards(2, std::make_shared<Board>(Board(BOARD_SIZE)));
+std::vector<std::shared_ptr<Board>> boards;
 std::vector<std::vector<const wchar_t*>> memory_map(MEMORY_MAP_SIZE, std::vector<const wchar_t*>(MEMORY_MAP_SIZE, L" "));
 std::vector<Line> player_sight_lines;
 vect2Di player_pos;
@@ -371,7 +372,7 @@ void naiveBoardToScreen(vect2Di pos, int& row, int& col)
   col = pos.x - player_pos.x + num_cols/2;
 }
 
-void makePortalPair( std::shared_ptr<Board> b1,vect2Di p1, std::shared_ptr<Board> b2, vect2Di p2, bool left=true)
+void makePortalPair(std::shared_ptr<Board> b1 ,vect2Di p1, std::shared_ptr<Board> b2, vect2Di p2, bool left=true)
 {
   if (!b1->onBoard(p1) || !b2->onBoard(p2))
     return;
@@ -523,7 +524,12 @@ void makeMirror(std::shared_ptr<Board> board, vect2Di square, vect2Di step)
 
 void initWorld()
 {
-  player_board = boards[0];
+  // make the boards
+  for (int i = 0; i < 2; i++)
+  {
+    boards.push_back(std::make_shared<Board>(Board(BOARD_SIZE)));
+  }
+  player_board = boards[1];
   player_pos = vect2Di(5, 5);
 
   
@@ -576,7 +582,11 @@ void initWorld()
   // this should be a retro-reflector
   makePortalPair2(boards[0], vect2Di(1, 4), LEFT, boards[0], vect2Di(1, 4), LEFT, false);
 
+  // the infinite tunnel
   makeNicePortalPair(boards[0], 20, 20, boards[0], 20, 30, 7, 0);
+
+  // to the second board
+  makeNicePortalPair(boards[0], 20, 40, boards[1], 20, 40, 7, 0);
 
   makeNicePortalPair(boards[0], 60, 20, boards[0], 72, 20, 5, 0);
   for (int y = 10; y < 31; y++)
@@ -783,41 +793,39 @@ void updateEntities()
       if (entityptr->moving == true)
       {
         vect2Di step = entityptr->faced_direction;
-        Line step_line = lineCast(entityptr->board.lock(), entityptr->pos, step);
-        if (step_line.mappings.size() > 0)
+        vect2Di newpos;
+        std::shared_ptr<Board> newboard;
+        std::tie(newboard, newpos) = posFromStep(entityptr->board.lock(), entityptr->pos, step);
+        if (posIsFlyable(newboard, newpos))
         {
-          vect2Di newpos = step_line.mappings[0].board_pos;
-          std::shared_ptr<Board> newboard = step_line.mappings[0].board;
-          if (posIsFlyable(newboard, newpos))
+          mat2Di T = transformFromStep(entityptr->board.lock(), entityptr->pos, step);
+          entityptr->faced_direction *= T;
+          moveEntity(entityptr, newboard, newpos);
+          if (entityptr->rel_player_pos != ZERO)
           {
-            mat2Di T = transformFromStep(entityptr->board.lock(), entityptr->pos, step);
-            entityptr->faced_direction *= T;
-            moveEntity(entityptr, newboard, newpos);
-            if (entityptr->rel_player_pos != ZERO)
-            {
-              entityptr->rel_player_pos -= step;
-              entityptr->rel_player_pos *= T;
-            }
-          }
-          // if the new position is not clear, the arrow dies, and maybe does some damage
-          else if (entityptr->die_on_touch)
-          {
-            if (newboard->getSquare(newpos)->plant > 0)
-            {
-              newboard->getSquare(newpos)->plant -= 1;
-            }
-            else if (newboard->getSquare(newpos)->wall == true)
-            {
-              // can't damage a wall with a simple arrow
-            }
-            else if (newboard->getSquare(newpos)->entity.lock() != nullptr)
-            {
-              todelete.push_back(newboard->getSquare(newpos)->entity.lock());
-            }
-            // no mater what the arrow has hit, the arrow dies
-            todelete.push_back(entityptr);
+            entityptr->rel_player_pos -= step;
+            entityptr->rel_player_pos *= T;
           }
         }
+        // if the new position is not clear, the arrow dies, and maybe does some damage
+        else if (entityptr->die_on_touch)
+        {
+          if (newboard->getSquare(newpos)->plant > 0)
+          {
+            newboard->getSquare(newpos)->plant -= 1;
+          }
+          else if (newboard->getSquare(newpos)->wall == true)
+          {
+            // can't damage a wall with a simple arrow
+          }
+          else if (newboard->getSquare(newpos)->entity.lock() != nullptr)
+          {
+            todelete.push_back(newboard->getSquare(newpos)->entity.lock());
+          }
+          // no mater what the arrow has hit, the arrow dies
+          todelete.push_back(entityptr);
+        }
+
       }
       if (entityptr->can_shoot)
       {
