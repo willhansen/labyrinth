@@ -24,9 +24,10 @@ struct Entity
   int cooldown = 0;
   int detection_range=10;
 
-  static Entity arrow(vect2Di pos, vect2Di dir)
+  static Entity arrow(std::shared_ptr<Board> board, vect2Di pos, vect2Di dir)
   {
     Entity arrow;
+    arrow.board = board;
     arrow.pos = pos;
     arrow.faced_direction = dir;
     arrow.moving = true;
@@ -34,18 +35,20 @@ struct Entity
     return arrow;
   }
 
-  static Entity mote(vect2Di pos)
+  static Entity mote(std::shared_ptr<Board> board, vect2Di pos)
   {
     Entity mote;
+    mote.board = board;
     mote.pos = pos;
     mote.moving = true;
     mote.homing = true;
     return mote;
   }
 
-  static Entity turret(vect2Di pos, vect2Di dir)
+  static Entity turret(std::shared_ptr<Board> board, vect2Di pos, vect2Di dir)
   {
     Entity turret;
+    turret.board = board;
     turret.pos = pos;
     turret.faced_direction = dir;
     turret.can_shoot = true;

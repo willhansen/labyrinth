@@ -172,7 +172,7 @@ void createMote(std::shared_ptr<Board> board, vect2Di pos)
   {
     return;
   }
-  std::shared_ptr<Entity> moteptr = std::make_shared<Entity>(Entity::mote(pos));
+  std::shared_ptr<Entity> moteptr = std::make_shared<Entity>(Entity::mote(board, pos));
   squareptr->entity = moteptr;
   board->entities.push_back(moteptr);
 }
@@ -632,7 +632,7 @@ void createArrow(std::shared_ptr<Board> board, vect2Di world_pos, vect2Di direct
   {
     return;
   }
-  std::shared_ptr<Entity> arrowptr = std::make_shared<Entity>(Entity::arrow(world_pos, direction));
+  std::shared_ptr<Entity> arrowptr = std::make_shared<Entity>(Entity::arrow(board, world_pos, direction));
   squareptr->entity = arrowptr;
   board->entities.push_back(arrowptr);
 }
@@ -645,7 +645,7 @@ void createTurret(std::shared_ptr<Board> board, vect2Di world_pos, vect2Di direc
   {
     return;
   }
-  std::shared_ptr<Entity> turretptr = std::make_shared<Entity>(Entity::turret(world_pos, direction));
+  std::shared_ptr<Entity> turretptr = std::make_shared<Entity>(Entity::turret(board, world_pos, direction));
   squareptr->entity = turretptr;
   board->entities.push_back(turretptr);
 }
