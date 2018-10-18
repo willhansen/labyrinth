@@ -1,6 +1,6 @@
 
 #define _XOPEN_SOURCE_EXTENDED 1
-#include "square.h"
+#include "board.h"
 #include "line.h"
 #include "portal.h"
 #include "entity.h"
@@ -49,24 +49,21 @@ const wchar_t* STEAM_GLYPH = L"▒";
 const int BACKGROUND_COLOR = WHITE_ON_BLACK;
 const wchar_t* OUT_OF_VIEW = L" ";
 
-const std::vector<const wchar_t*> GRASS_GLYPHS = {L" ", L" ", L" ", L".", L"'", L",", L"`"};
-const std::vector<int> GRASS_COLORS = {COLOR_YELLOW, COLOR_YELLOW, COLOR_GREEN};
 
-Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line=false);
+Line curveCast(std::shared_ptr<Board> board, std::vector<vect2Di> naive_squares, bool is_sight_line=false);
 void drawEverything();
 void updateSightLines();
-Line lineCast(vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
+Line lineCast(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di d_pos, bool is_sight_line=false);
 void initNCurses();
-mat2Di transformFromStep(vect2Di start_pos, vect2Di step);
-Square* getSquare(vect2Di pos);
+mat2Di transformFromStep(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di step);
 void shiftMemoryMap(vect2Di);
 
 //TODO: make these non-global
-std::vector<std::shared_ptr<Entity>> entities;
-std::vector<std::vector<Square>> board(BOARD_SIZE, std::vector<Square>(BOARD_SIZE));
+std::vector<std::shared_ptr<Board>> boards(2, std::make_shared<Board>(Board(BOARD_SIZE)));
 std::vector<std::vector<const wchar_t*>> memory_map(MEMORY_MAP_SIZE, std::vector<const wchar_t*>(MEMORY_MAP_SIZE, L" "));
 std::vector<Line> player_sight_lines;
 vect2Di player_pos;
+std::shared_ptr<Board> player_board;
 int consecutive_laser_rounds = 0;
 vect2Di player_faced_direction = RIGHT;
 // This is visual only, its a transform for drawing to the screen and changing the direction of movement inputs.
@@ -76,19 +73,15 @@ vect2Di mouse_pos;
 
 int num_rows,num_cols;				/* to store the number of rows and */
 
-bool onBoard(vect2Di p)
-{
-  return (p.x>=0 && p.y>=0 && p.x<BOARD_SIZE && p.y<BOARD_SIZE);
-}
 
 bool onScreen(int row, int col)
 {
   return (row>=0 && col>=0 && row<num_rows && col<num_cols);
 }
 
-bool posIsEmpty(vect2Di pos)
+bool posIsEmpty(std::shared_ptr<Board> board, vect2Di pos)
 {
-  Square* squareptr = getSquare(pos);
+  Square* squareptr = board->getSquare(pos);
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
       squareptr->entity.lock() != nullptr || 
@@ -106,9 +99,9 @@ bool posIsEmpty(vect2Di pos)
   }
 }
 
-bool posIsWalkable(vect2Di pos)
+bool posIsWalkable(std::shared_ptr<Board> board, vect2Di pos)
 {
-  Square* squareptr = getSquare(pos);
+  Square* squareptr = board->getSquare(pos);
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
       squareptr->entity.lock() != nullptr || 
@@ -126,9 +119,9 @@ bool posIsWalkable(vect2Di pos)
   }
 }
 
-bool posIsFlyable(vect2Di pos)
+bool posIsFlyable(std::shared_ptr<Board> board, vect2Di pos)
 {
-  Square* squareptr = getSquare(pos);
+  Square* squareptr = board->getSquare(pos);
   // Square must be empty and also actually be there
   if (squareptr == nullptr || 
       squareptr->entity.lock() != nullptr || 
@@ -155,73 +148,79 @@ void attemptMove(vect2Di dp, bool voluntaryMove = true)
   {
     player_faced_direction = dp;
   }
-  Line line = lineCast(player_pos, dp);
+  Line line = lineCast(player_board, player_pos, dp);
   if (line.mappings.size() > 0)
   {
     vect2Di pos = line.mappings[0].board_pos;
-    if (posIsWalkable(pos))
+    std::shared_ptr<Board> board = line.mappings[0].board;
+    if (posIsWalkable(board, pos))
     {
       shiftMemoryMap(dp * player_transform.inversed());
-      player_transform *= transformFromStep(player_pos, dp);
-      player_faced_direction *= transformFromStep(player_pos, dp);
+      player_transform *= transformFromStep(player_board, player_pos, dp);
+      player_faced_direction *= transformFromStep(player_board, player_pos, dp);
       player_pos = pos;
+      player_board = board;
     }
   }
 }
 
-void createMote(vect2Di pos)
+void createMote(std::shared_ptr<Board> board, vect2Di pos)
 {
-  Square* squareptr = getSquare(pos);
+  Square* squareptr = board->getSquare(pos);
   // Square must be empty
-  if (squareptr == nullptr || !posIsEmpty(pos))
+  if (squareptr == nullptr || !posIsEmpty(board, pos))
   {
     return;
   }
   std::shared_ptr<Entity> moteptr = std::make_shared<Entity>(Entity::mote(pos));
   squareptr->entity = moteptr;
-  entities.push_back(moteptr);
+  board->entities.push_back(moteptr);
 }
 
-void createPlant(vect2Di pos)
+void createPlant(std::shared_ptr<Board> board, vect2Di pos)
 {
-  Square* squareptr = getSquare(pos);
+  Square* squareptr = board->getSquare(pos);
   // Square must be empty
-  if (squareptr == nullptr || !posIsWalkable(pos))
+  if (squareptr == nullptr || !posIsWalkable(board, pos))
   {
     return;
   }
   squareptr->plant = PLANT_MAX_HEALTH;
 }
 
-void createWater(vect2Di pos, int depth)
+void createWater(std::shared_ptr<Board> board, vect2Di pos, int depth)
 {
-  Square* squareptr = getSquare(pos);
+  Square* squareptr = board->getSquare(pos);
   // Square must be empty
-  if (!posIsEmpty(pos))
+  if (!posIsEmpty(board, pos))
   {
     return;
   }
   squareptr->water = depth;
 }
 
-void deleteEntity(std::shared_ptr<Entity> entity)
-{
-  // If 2 shared pointers are equal if they point to the same mote, this should work
-  entities.erase(std::remove(entities.begin(), entities.end(), entity), entities.end());
-}
 
 
 // This assumes validity checks have been done, and just handles the pointer movements
-void moveEntity(std::shared_ptr<Entity> entityptr, vect2Di new_pos)
+void moveEntity(std::shared_ptr<Entity> entityptr, std::shared_ptr<Board> new_board, vect2Di new_pos)
 {
-  Square* newSquareptr = getSquare(new_pos);
+  std::shared_ptr<Board> old_board = entityptr->board.lock();
 
-  // this square exists
-  Square* oldSquareptr = getSquare(entityptr->pos);
+  Square* newSquareptr = new_board->getSquare(new_pos);
+  Square* oldSquareptr = old_board->getSquare(entityptr->pos);
+
   newSquareptr->entity = oldSquareptr->entity;
   oldSquareptr->entity.reset();
 
   entityptr->pos = new_pos;
+
+  // if the entity has crossed over to a new board
+  if (new_board != old_board)
+  {
+    entityptr->board = new_board;
+    new_board->entities.push_back(entityptr);
+    old_board->deleteEntity(entityptr);
+  }
 }
 
 
@@ -372,58 +371,53 @@ void naiveBoardToScreen(vect2Di pos, int& row, int& col)
   col = pos.x - player_pos.x + num_cols/2;
 }
 
-Square* getSquare(vect2Di pos)
+void makePortalPair( std::shared_ptr<Board> b1,vect2Di p1, std::shared_ptr<Board> b2, vect2Di p2, bool left=true)
 {
-  if (!onBoard(pos))
-  {
-    return nullptr;
-  }
-  else
-  {
-    Square* ptr = &board[pos.x][pos.y];
-    return ptr;
-  }
-}
-
-void makePortalPair(vect2Di p1, vect2Di p2, bool left=true)
-{
-  if (!onBoard(p1) || !onBoard(p2))
+  if (!b1->onBoard(p1) || !b2->onBoard(p2))
     return;
   if (left)
   {
-    board[p1.x][p1.y].left_portal.reset(new Portal());
-    board[p1.x][p1.y].left_portal->new_pos = p2+LEFT;
+    b1->board[p1.x][p1.y].left_portal.reset(new Portal());
+    b1->board[p1.x][p1.y].left_portal->new_pos = p2+LEFT;
+    b1->board[p1.x][p1.y].left_portal->new_board = b2;
 
-    board[p1.x-1][p1.y].right_portal.reset(new Portal());
-    board[p1.x-1][p1.y].right_portal->new_pos = p2;
+    b1->board[p1.x-1][p1.y].right_portal.reset(new Portal());
+    b1->board[p1.x-1][p1.y].right_portal->new_pos = p2;
+    b1->board[p1.x-1][p1.y].right_portal->new_board = b2;
 
-    board[p2.x][p2.y].left_portal.reset(new Portal());
-    board[p2.x][p2.y].left_portal->new_pos = p1+LEFT;
+    b2->board[p2.x][p2.y].left_portal.reset(new Portal());
+    b2->board[p2.x][p2.y].left_portal->new_pos = p1+LEFT;
+    b2->board[p2.x][p2.y].left_portal->new_board = b1;
 
-    board[p2.x-1][p2.y].right_portal.reset(new Portal());
-    board[p2.x-1][p2.y].right_portal->new_pos = p1;
+    b2->board[p2.x-1][p2.y].right_portal.reset(new Portal());
+    b2->board[p2.x-1][p2.y].right_portal->new_pos = p1;
+    b2->board[p2.x-1][p2.y].right_portal->new_board = b1;
   }
   else
   {
-    board[p1.x][p1.y].down_portal.reset(new Portal());
-    board[p1.x][p1.y].down_portal->new_pos = p2+DOWN;
+    b1->board[p1.x][p1.y].down_portal.reset(new Portal());
+    b1->board[p1.x][p1.y].down_portal->new_pos = p2+DOWN;
+    b1->board[p1.x][p1.y].down_portal->new_board = b2;
 
-    board[p1.x][p1.y-1].up_portal.reset(new Portal());
-    board[p1.x][p1.y-1].up_portal->new_pos = p2;
+    b1->board[p1.x][p1.y-1].up_portal.reset(new Portal());
+    b1->board[p1.x][p1.y-1].up_portal->new_pos = p2;
+    b1->board[p1.x][p1.y-1].up_portal->new_board = b2;
 
-    board[p2.x][p2.y].down_portal.reset(new Portal());
-    board[p2.x][p2.y].down_portal->new_pos = p1+DOWN;
+    b2->board[p2.x][p2.y].down_portal.reset(new Portal());
+    b2->board[p2.x][p2.y].down_portal->new_pos = p1+DOWN;
+    b2->board[p2.x][p2.y].down_portal->new_board = b1;
 
-    board[p2.x][p2.y-1].up_portal.reset(new Portal());
-    board[p2.x][p2.y-1].up_portal->new_pos = p1;
+    b2->board[p2.x][p2.y-1].up_portal.reset(new Portal());
+    b2->board[p2.x][p2.y-1].up_portal->new_pos = p1;
+    b2->board[p2.x][p2.y-1].up_portal->new_board = b1;
   }
 }
 
 
-void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip)
+void makeOneWayPortalPair( std::shared_ptr<Board> board1,vect2Di pos1, vect2Di step1, std::shared_ptr<Board> board2, vect2Di pos2, vect2Di step2, bool flip)
 {
-  Square* square1 = getSquare(pos1);
-  Square* square2 = getSquare(pos2);
+  Square* square1 = board1->getSquare(pos1);
+  Square* square2 = board2->getSquare(pos2);
   // both squares must be on the board
   if (square1==nullptr || square2==nullptr)
   {
@@ -447,6 +441,7 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
   std::shared_ptr<Portal>* portal1 = getPortal(*square1, step1);
   (*portal1).reset(new Portal());
   (*portal1)->new_pos = pos2;
+  (*portal1)->new_board = board2;
   (*portal1)->transform = rotation1to2;
 
   if (flip == true)
@@ -464,6 +459,7 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
   std::shared_ptr<Portal>* portal2 = getPortal(*square2, step2);
   (*portal2).reset(new Portal());
   (*portal2)->new_pos = pos1;
+  (*portal2)->new_board = board1;
   (*portal2)->transform = rotation1to2.inversed();
 
   if (flip == true)
@@ -479,10 +475,10 @@ void makeOneWayPortalPair(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di ste
   }
 }
 
-void makePortalPair2(vect2Di pos1, vect2Di step1, vect2Di pos2, vect2Di step2, bool flip)
+void makePortalPair2( std::shared_ptr<Board> board1, vect2Di pos1, vect2Di step1, std::shared_ptr<Board> board2, vect2Di pos2, vect2Di step2, bool flip=false)
 {
-  makeOneWayPortalPair(pos1, step1, pos2, step2, flip);
-  makeOneWayPortalPair(pos1+step1, -step1, pos2+step2, -step2, flip);
+  makeOneWayPortalPair( board1,pos1, step1, board2, pos2, step2, flip);
+  makeOneWayPortalPair( board1,pos1+step1, -step1, board2, pos2+step2, -step2, flip);
 }
 
 void initNCurses()
@@ -506,86 +502,49 @@ void initNCurses()
   }
 }
 
-void rectToWall(int left, int bottom, int right, int top)
-{
-  for (int x = left; x < right+1; x++)
-  {
-    board[x][bottom].wall = true;
-    board[x][top].wall = true;
-  }
-  for (int y = bottom; y < top+1; y++)
-  {
-    board[left][y].wall = true;
-    board[right][y].wall = true;
-  }
-}
 
-void makeNicePortalPair(int x1, int y1, int x2, int y2, int dx, int dy)
+void makeNicePortalPair( std::shared_ptr<Board> b1,int x1, int y1, std::shared_ptr<Board> b2, int x2, int y2, int dx, int dy)
 {
-  board[x1][y1].wall = true;
-  board[x2][y2].wall = true;
-  board[x1+dx+1][y1+dy].wall = true;
-  board[x2+dx+1][y2+dy].wall = true;
+  b1->board[x1][y1].wall = true;
+  b2->board[x2][y2].wall = true;
+  b1->board[x1+dx+1][y1+dy].wall = true;
+  b2->board[x2+dx+1][y2+dy].wall = true;
   for (int rx = 1; rx <= dx; rx++)
   {
-    makePortalPair(vect2Di(x1+rx,y1),vect2Di(x2+rx,y2), false);
+    makePortalPair( b1,vect2Di(x1+rx,y1), b2,vect2Di(x2+rx,y2), false);
   }
 
 }
 
-void makeMirror(vect2Di square, vect2Di step)
+void makeMirror(std::shared_ptr<Board> board, vect2Di square, vect2Di step)
 {
-  makePortalPair2(square, step, square, step, true);
+  makePortalPair2( board,square, step, board, square, step, true);
 }
 
-int random(int min, int max) //range : [min, max)
+void initWorld()
 {
-   static bool first = true;
-   if (first) 
-   {  
-      srand( time(NULL) ); //seeding for the first time only!
-      first = false;
-   }
-   if (max == min)
-   {
-     return min;
-   }
-   return min + rand() % (( max ) - min);
-}
-
-void initBoard()
-{
+  player_board = boards[0];
   player_pos = vect2Di(5, 5);
 
-  // pick random grass glyphs and colors for every tile
-  for (int x=0; x < BOARD_SIZE; x++)
-  {
-    for (int y=0; y < BOARD_SIZE; y++)
-    {
-      getSquare(vect2Di(x, y))->grass_glyph = GRASS_GLYPHS[random(0, GRASS_GLYPHS.size())];
-      getSquare(vect2Di(x, y))->grass_color = GRASS_COLORS[random(0, GRASS_COLORS.size())];
-    }
-  }
   
-  rectToWall(0, 0, BOARD_SIZE-1, BOARD_SIZE-1);
-  rectToWall(30, 5, 50, 20);
+  boards[0]->rectToWall(30, 5, 50, 20);
 
   //rectToWall(20,10,22,12);
-  getSquare(vect2Di(20,12))->wall = true;
-  getSquare(vect2Di(20,10))->wall = true;
-  getSquare(vect2Di(22,10))->wall = true;
-  makePortalPair2(vect2Di(20, 11), RIGHT, vect2Di(21, 10), UP, false);
+  boards[0]->getSquare(vect2Di(20,12))->wall = true;
+  boards[0]->getSquare(vect2Di(20,10))->wall = true;
+  boards[0]->getSquare(vect2Di(22,10))->wall = true;
+  makePortalPair2(boards[0] ,vect2Di(20, 11), RIGHT, boards[0], vect2Di(21, 10), UP, false);
 
   // corner portal on frame of square
-  getSquare(vect2Di(30,8))->wall = false;
-  getSquare(vect2Di(30,7))->wall = false;
-  getSquare(vect2Di(30,6))->wall = false;
-  getSquare(vect2Di(33,5))->wall = false;
-  getSquare(vect2Di(32,5))->wall = false;
-  getSquare(vect2Di(31,5))->wall = false;
-  makePortalPair2(vect2Di(31, 8), LEFT, vect2Di(33, 6), DOWN, false);
-  makePortalPair2(vect2Di(31, 7), LEFT, vect2Di(32, 6), DOWN, false);
-  makePortalPair2(vect2Di(31, 6), LEFT, vect2Di(31, 6), DOWN, false);
+  boards[0]->getSquare(vect2Di(30,8))->wall = false;
+  boards[0]->getSquare(vect2Di(30,7))->wall = false;
+  boards[0]->getSquare(vect2Di(30,6))->wall = false;
+  boards[0]->getSquare(vect2Di(33,5))->wall = false;
+  boards[0]->getSquare(vect2Di(32,5))->wall = false;
+  boards[0]->getSquare(vect2Di(31,5))->wall = false;
+  makePortalPair2( boards[0],vect2Di(31, 8), LEFT, boards[0], vect2Di(33, 6), DOWN, false);
+  makePortalPair2( boards[0],vect2Di(31, 7), LEFT, boards[0], vect2Di(32, 6), DOWN, false);
+  makePortalPair2( boards[0],vect2Di(31, 6), LEFT, boards[0], vect2Di(31, 6), DOWN, false);
 
   //createMote(vect2Di(10, 20));
   //createMote(vect2Di(10, 21));
@@ -609,30 +568,30 @@ void initBoard()
   //makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
   
   // This should be a mirror
-  makeMirror(vect2Di(1,9), LEFT);
-  makeMirror(vect2Di(1,8), LEFT);
-  makeMirror(vect2Di(1,7), LEFT);
-  makeMirror(vect2Di(1,6), LEFT);
+  makeMirror(boards[0], vect2Di(1,9), LEFT);
+  makeMirror(boards[0], vect2Di(1,8), LEFT);
+  makeMirror(boards[0], vect2Di(1,7), LEFT);
+  makeMirror(boards[0], vect2Di(1,6), LEFT);
   
   // this should be a retro-reflector
-  makePortalPair2(vect2Di(1, 4), LEFT, vect2Di(1, 4), LEFT, false);
+  makePortalPair2(boards[0], vect2Di(1, 4), LEFT, boards[0], vect2Di(1, 4), LEFT, false);
 
-  makeNicePortalPair(20, 20, 20, 30, 7, 0);
+  makeNicePortalPair(boards[0], 20, 20, boards[0], 20, 30, 7, 0);
 
-  makeNicePortalPair(60, 20, 72, 20, 5, 0);
+  makeNicePortalPair(boards[0], 60, 20, boards[0], 72, 20, 5, 0);
   for (int y = 10; y < 31; y++)
   {
-    board[60][y].wall = true;
-    board[66][y].wall = true;
-    board[72][y].wall = true;
-    board[78][y].wall = true;
+    boards[0]->board[60][y].wall = true;
+    boards[0]->board[66][y].wall = true;
+    boards[0]->board[72][y].wall = true;
+    boards[0]->board[78][y].wall = true;
   }
 
-  createPlant(vect2Di(10, 40));
-  createPlant(vect2Di(10, 41));
-  createPlant(vect2Di(11, 41));
+  createPlant(boards[0], vect2Di(10, 40));
+  createPlant(boards[0], vect2Di(10, 41));
+  createPlant(boards[0], vect2Di(11, 41));
 
-  createWater(vect2Di(10, 15), 300);
+  createWater(boards[0], vect2Di(10, 15), 300);
 }
 
 // x is in squares to the right
@@ -665,30 +624,30 @@ std::vector<vect2Di> naiveLaserSquares(int t, double phase)
   return laser_squares;
 }
 
-void createArrow(vect2Di world_pos, vect2Di direction)
+void createArrow(std::shared_ptr<Board> board, vect2Di world_pos, vect2Di direction)
 {
-  Square* squareptr = getSquare(world_pos);
+  Square* squareptr = board->getSquare(world_pos);
   // Square must be empty
-  if (squareptr == nullptr || !posIsFlyable(world_pos))
+  if (squareptr == nullptr || !posIsFlyable(board, world_pos))
   {
     return;
   }
   std::shared_ptr<Entity> arrowptr = std::make_shared<Entity>(Entity::arrow(world_pos, direction));
   squareptr->entity = arrowptr;
-  entities.push_back(arrowptr);
+  board->entities.push_back(arrowptr);
 }
 
-void createTurret(vect2Di world_pos, vect2Di direction)
+void createTurret(std::shared_ptr<Board> board, vect2Di world_pos, vect2Di direction)
 {
-  Square* squareptr = getSquare(world_pos);
+  Square* squareptr = board->getSquare(world_pos);
   // Square must be empty
-  if (squareptr == nullptr || !posIsWalkable(world_pos))
+  if (squareptr == nullptr || !posIsWalkable(board, world_pos))
   {
     return;
   }
   std::shared_ptr<Entity> turretptr = std::make_shared<Entity>(Entity::turret(world_pos, direction));
   squareptr->entity = turretptr;
-  entities.push_back(turretptr);
+  board->entities.push_back(turretptr);
 }
 
 // attempt to spawn an arrow just in front of the player
@@ -696,14 +655,15 @@ void shootArrow()
 {
   // first need to find the square and direction that is directly in front of the player
   vect2Di step = player_faced_direction;
-  Line step_line = lineCast(player_pos, step);
+  Line step_line = lineCast(player_board, player_pos, step);
   if (step_line.mappings.size() > 0)
   {
     vect2Di newpos = step_line.mappings[0].board_pos;
-    if (posIsFlyable(newpos))
+    std::shared_ptr<Board> newboard = step_line.mappings[0].board;
+    if (posIsFlyable(newboard, newpos))
     {
-      mat2Di T = transformFromStep(player_pos, step);
-      createArrow(newpos, player_faced_direction * T);
+      mat2Di T = transformFromStep(player_board, player_pos, step);
+      createArrow(player_board, newpos, player_faced_direction * T);
     }
   }
 }
@@ -713,14 +673,15 @@ void buildTurret()
 {
   // first need to find the square and direction that is directly in front of the player
   vect2Di step = player_faced_direction;
-  Line step_line = lineCast(player_pos, step);
+  Line step_line = lineCast(player_board, player_pos, step);
   if (step_line.mappings.size() > 0)
   {
     vect2Di newpos = step_line.mappings[0].board_pos;
-    if (posIsWalkable(newpos))
+    std::shared_ptr<Board> newboard = step_line.mappings[0].board;
+    if (posIsWalkable(newboard, newpos))
     {
-      mat2Di T = transformFromStep(player_pos, step);
-      createTurret(newpos, player_faced_direction * T);
+      mat2Di T = transformFromStep(player_board, player_pos, step);
+      createTurret(newboard, newpos, player_faced_direction * T);
     }
   }
 }
@@ -745,11 +706,12 @@ void shootLaser()
       naive_squares[i] *= rot_to_player_faced;
       naive_squares[i] += player_pos;
     }
-    Line laser_line = curveCast(naive_squares);
+    Line laser_line = curveCast(player_board, naive_squares);
     // for every square of the laser
     for (int i = 0; i < static_cast<int>(laser_line.mappings.size()); i++)
     {
-      Square* squareptr = getSquare(laser_line.mappings[i].board_pos);
+      std::shared_ptr<Board> board = laser_line.mappings[i].board;
+      Square* squareptr = board->getSquare(laser_line.mappings[i].board_pos);
       // Lasers don't go through walls
       if (squareptr->wall == true)
       {
@@ -758,7 +720,7 @@ void shootLaser()
       squareptr->fire = true;
       if (squareptr->entity.lock() != nullptr)
       {
-        deleteEntity(squareptr->entity.lock());
+        board->deleteEntity(squareptr->entity.lock());
       }
       if (squareptr->plant > 0)
       {
@@ -807,91 +769,95 @@ void facePlayer(std::shared_ptr<Entity> entityptr)
 void updateEntities()
 {
   std::vector<std::shared_ptr<Entity>> todelete;
-  int i = 0;
-  while (i < static_cast<int>(entities.size()))
+  for (auto board : boards)
   {
-    std::shared_ptr<Entity> entityptr = entities[i];
-    // face the player if can turn
-    if (entityptr->homing == true)
+    int i = 0;
+    while (i < static_cast<int>(board->entities.size()))
     {
-      facePlayer(entityptr);
-    }
-    if (entityptr->moving == true)
-    {
-      vect2Di step = entityptr->faced_direction;
-      Line step_line = lineCast(entityptr->pos, step);
-      if (step_line.mappings.size() > 0)
+      std::shared_ptr<Entity> entityptr = board->entities[i];
+      // face the player if can turn
+      if (entityptr->homing == true)
       {
-        vect2Di newpos = step_line.mappings[0].board_pos;
-        if (posIsFlyable(newpos))
-        {
-          mat2Di T = transformFromStep(entityptr->pos, step);
-          entityptr->faced_direction *= T;
-          moveEntity(entityptr, newpos);
-          if (entityptr->rel_player_pos != ZERO)
-          {
-            entityptr->rel_player_pos -= step;
-            entityptr->rel_player_pos *= T;
-          }
-        }
-        // if the new position is not clear, the arrow dies, and maybe does some damage
-        else if (entityptr->die_on_touch)
-        {
-          if (getSquare(newpos)->plant > 0)
-          {
-            getSquare(newpos)->plant -= 1;
-          }
-          else if (getSquare(newpos)->wall == true)
-          {
-            // can't damage a wall with a simple arrow
-          }
-          else if (getSquare(newpos)->entity.lock() != nullptr)
-          {
-            todelete.push_back(getSquare(newpos)->entity.lock());
-          }
-          // no mater what the arrow has hit, the arrow dies
-          todelete.push_back(entityptr);
-        }
+        facePlayer(entityptr);
       }
-    }
-    if (entityptr->can_shoot)
-    {
-      if (entityptr->cooldown > 0)
+      if (entityptr->moving == true)
       {
-        entityptr->cooldown -= 1; 
-      }
-      else
-      {
-        // raycast ahead of the entity, and if it sees another entity, shoot it and set the cooldown
-        vect2Di step = entityptr->faced_direction * entityptr->detection_range;
-        Line detection_line = lineCast(entityptr->pos, step);
-        for (SquareMap mapping : detection_line.mappings)
+        vect2Di step = entityptr->faced_direction;
+        Line step_line = lineCast(entityptr->board.lock(), entityptr->pos, step);
+        if (step_line.mappings.size() > 0)
         {
-          Square* squareptr = getSquare(mapping.board_pos);
-          if (squareptr->wall == true)
+          vect2Di newpos = step_line.mappings[0].board_pos;
+          std::shared_ptr<Board> newboard = step_line.mappings[0].board;
+          if (posIsFlyable(newboard, newpos))
           {
-            break;
-          }
-          else if (squareptr->entity.lock() != nullptr || mapping.board_pos == player_pos)
-          {
-            // if there is space in front of the entity
-            if (posIsFlyable(detection_line.mappings[0].board_pos))
+            mat2Di T = transformFromStep(entityptr->board.lock(), entityptr->pos, step);
+            entityptr->faced_direction *= T;
+            moveEntity(entityptr, newboard, newpos);
+            if (entityptr->rel_player_pos != ZERO)
             {
-              // shoot an arrow
-              mat2Di T = transformFromStep(entityptr->pos, entityptr->faced_direction);
-              createArrow(detection_line.mappings[0].board_pos, entityptr->faced_direction * T);
-              entityptr->cooldown = entityptr->max_cooldown;
+              entityptr->rel_player_pos -= step;
+              entityptr->rel_player_pos *= T;
+            }
+          }
+          // if the new position is not clear, the arrow dies, and maybe does some damage
+          else if (entityptr->die_on_touch)
+          {
+            if (newboard->getSquare(newpos)->plant > 0)
+            {
+              newboard->getSquare(newpos)->plant -= 1;
+            }
+            else if (newboard->getSquare(newpos)->wall == true)
+            {
+              // can't damage a wall with a simple arrow
+            }
+            else if (newboard->getSquare(newpos)->entity.lock() != nullptr)
+            {
+              todelete.push_back(newboard->getSquare(newpos)->entity.lock());
+            }
+            // no mater what the arrow has hit, the arrow dies
+            todelete.push_back(entityptr);
+          }
+        }
+      }
+      if (entityptr->can_shoot)
+      {
+        if (entityptr->cooldown > 0)
+        {
+          entityptr->cooldown -= 1; 
+        }
+        else
+        {
+          // raycast ahead of the entity, and if it sees another entity, shoot it and set the cooldown
+          vect2Di step = entityptr->faced_direction * entityptr->detection_range;
+          Line detection_line = lineCast(entityptr->board.lock(), entityptr->pos, step);
+          for (SquareMap mapping : detection_line.mappings)
+          {
+            Square* squareptr = mapping.board->getSquare(mapping.board_pos);
+            if (squareptr->wall == true)
+            {
               break;
+            }
+            else if (squareptr->entity.lock() != nullptr || mapping.board_pos == player_pos)
+            {
+              // if there is space in front of the entity
+              if (posIsFlyable(detection_line.mappings[0].board, detection_line.mappings[0].board_pos))
+              {
+                // shoot an arrow
+                mat2Di T = transformFromStep(entityptr->board.lock(), entityptr->pos, entityptr->faced_direction);
+                createArrow(detection_line.mappings[0].board, detection_line.mappings[0].board_pos, entityptr->faced_direction * T);
+                entityptr->cooldown = entityptr->max_cooldown;
+                break;
+              }
             }
           }
         }
       }
+      i++;
     }
-    i++;
   }
   for (auto entityptr : todelete)
   {
-    deleteEntity(entityptr);
+    entityptr->board.lock()->deleteEntity(entityptr);
   }
 }
 
@@ -971,7 +937,7 @@ void updateSightLines()
   for(int i = 0; i < static_cast<int>(rel_p.size()); i++)
   {
     bool is_sight_line = true;
-    Line new_sightline = lineCast(player_pos, rel_p[i], is_sight_line);
+    Line new_sightline = lineCast(player_board, player_pos, rel_p[i], is_sight_line);
 
     player_sight_lines.push_back(new_sightline);
   }
@@ -979,138 +945,143 @@ void updateSightLines()
 
 // Redirect an orthogonal step between adjacent squares.
 // assumes step is exactly one square orthogonal
-void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset, mat2Di& portal_transform, int& portal_color)
+void orthogonalRedirect(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di step, std::shared_ptr<Board>& end_board, vect2Di& end_pos, mat2Di& portal_transform, int& portal_color)
 {
-  vect2Di naive_end_pos = start_pos + step;
-
-  if (!onBoard(start_pos))
+  if (!start_board->onBoard(start_pos))
   {
     return;
   }
-  Square square = board[start_pos.x][start_pos.y];
+  Square square = start_board->board[start_pos.x][start_pos.y];
 
   std::shared_ptr<Portal> portalptr = *getPortal(square, step);
 
   if (portalptr == nullptr)
   {
-    // no offset to be had, nothing left to do
-    return;
+    // Nice and simple
+    end_board = start_board;
+    end_pos = start_pos + step;
+    portal_transform = IDENTITY;
+    portal_color = COLOR_WHITE;
   }
   else
   {
-    portal_offset = portalptr->new_pos - naive_end_pos;
+    // take redirect, transform, and color from the portal
+    end_pos = portalptr->new_pos;
+    end_board = portalptr->new_board.lock();
     portal_transform = portalptr->transform;
     portal_color = portalptr->color;
   }
 }
+
 // overload to make the color optional
-void orthogonalRedirect(vect2Di start_pos, vect2Di step, vect2Di& portal_offset, mat2Di& portal_transform)
+void orthogonalRedirect(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di step, std::shared_ptr<Board>& end_board, vect2Di& end_pos, mat2Di& portal_transform)
 {
   int color = COLOR_WHITE;
-  return orthogonalRedirect(start_pos, step, portal_offset, portal_transform, color);
+  return orthogonalRedirect(start_board, start_pos, step, end_board, end_pos, portal_transform, color);
 }
 
-mat2Di transformFromStep(vect2Di start_pos, vect2Di step)
+mat2Di transformFromStep(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di step)
 {
   mat2Di transform;
-  vect2Di offset;
-  orthogonalRedirect(start_pos, step, offset, transform);
+  vect2Di end_pos;
+  std::shared_ptr<Board> end_board;
+  orthogonalRedirect(start_board, start_pos, step, end_board, end_pos, transform);
   return transform;
 }
 
-vect2Di posFromStep(vect2Di start_pos, vect2Di step)
+std::pair<std::shared_ptr<Board>, vect2Di> posFromStep(std::shared_ptr<Board> start_board, vect2Di start_pos, vect2Di step)
 {
   mat2Di transform;
-  vect2Di offset;
-  orthogonalRedirect(start_pos, step, offset, transform);
-  return start_pos + step + offset;
+  vect2Di end_pos;
+  std::shared_ptr<Board> end_board;
+  orthogonalRedirect(start_board, start_pos, step, end_board, end_pos, transform);
+  return std::make_pair(end_board, end_pos);
 }
 
-Line curveCast(std::vector<vect2Di> naive_squares, bool is_sight_line)
+Line curveCast(std::shared_ptr<Board> start_board, std::vector<vect2Di> naive_squares, bool is_sight_line)
 {
   Line line;
 
-  // These represent how much the line has been teleported when going through a portal.
-  // Take the real position, subtract the translation offset, then the rotation offset, and you have the line position.
-  vect2Di offset;
   // This is the rotation and flips of portals travelled to.  Apply to each relative step.
   // a 2x2 matrix of ints.
   // New transforms are multiplied onto the right.
-  mat2Di transform;
+  mat2Di cumulative_transform = IDENTITY;
 
-  int color = COLOR_WHITE; // As a sight line goes through a portal, if that portal has a non-white or non-black color, that color overwrites the old one (may have fancier interactions later)
-  vect2Di board_pos = naive_squares[0];
+  int current_color = COLOR_WHITE; // As a sight line goes through a portal, if that portal has a non-white or non-black color, that color overwrites the old one (may have fancier interactions later)
+  vect2Di current_pos = naive_squares[0];
+  vect2Di next_pos;
+
+  std::shared_ptr<Board> current_board = start_board;
+  std::shared_ptr<Board> next_board;
 
   // Sight lines don't include the starting square.  They do include the ending square.
   for(int step_num = 1; step_num < static_cast<int>(naive_squares.size()); step_num++)
   {
     vect2Di naive_step = naive_squares[step_num] - naive_squares[step_num-1];
     // This takes into account rotations and flipping caused by portals
-    vect2Di transformed_naive_step = naive_step * transform;
-    // This does not yet account for a portal this next step may step through
-    vect2Di naive_next_board_pos = board_pos + transformed_naive_step;
+    vect2Di transformed_naive_step = naive_step * cumulative_transform;
 
-    vect2Di portal_offset;
     mat2Di portal_transform;
     int portal_color = COLOR_WHITE; // white means no change
     if (!PORTALS_OFF)
     { 
-      orthogonalRedirect(board_pos, transformed_naive_step, portal_offset, portal_transform, portal_color);
+      orthogonalRedirect(current_board, current_pos, transformed_naive_step, next_board, next_pos, portal_transform, portal_color);
     }
     if(portal_color != COLOR_WHITE)
     {
-      color = portal_color;
+      current_color = portal_color;
     }
 
-    offset += portal_offset; 
-    transform *= portal_transform;
+    cumulative_transform *= portal_transform;
 
-    vect2Di next_board_pos = naive_next_board_pos + portal_offset;
 
-    // If the portal has sent us off the board, stop
-    if (!onBoard(next_board_pos))
+    // If the portal has sent us off a board, stop
+    if (!next_board->onBoard(next_pos))
     {
       break;
     }
 
     SquareMap square_map;
 
-    square_map.board_pos = next_board_pos;
+    square_map.board = next_board;
+    square_map.board_pos = next_pos;
 
     square_map.line_pos = naive_squares[step_num] - naive_squares[0];
 
-    square_map.transform = transform;
+    square_map.transform = cumulative_transform;
 
-    square_map.color = color;
+    square_map.color = current_color;
 
     line.mappings.push_back(square_map);
 
     // sight lines don't need to go past the first block
     if (is_sight_line)
     {
+      Square* new_square = next_board->getSquare(next_pos);
       // if there is a mote here, it wants to go to the source of the sight line
-      if (board[next_board_pos.x][next_board_pos.y].entity.lock() != nullptr)
+      if (new_square->entity.lock() != nullptr)
       {
-        board[next_board_pos.x][next_board_pos.y].entity.lock()->rel_player_pos = naive_squares[0] - naive_squares[step_num];
+        new_square->entity.lock()->rel_player_pos = naive_squares[0] - naive_squares[step_num];
       }
 
       // Walls, plants, and steam all block sight
-      if (board[next_board_pos.x][next_board_pos.y].wall == true ||
-          board[next_board_pos.x][next_board_pos.y].plant > 0 ||
-          board[next_board_pos.x][next_board_pos.y].steam > 0 )
+      if (new_square->wall == true ||
+          new_square->plant > 0 ||
+          new_square->steam > 0 )
       {
         break;
       }
     }
-    board_pos = next_board_pos;
+    current_pos = next_pos;
+    current_board = next_board;
   }
   return line;
 }
 
-Line lineCast(vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
+Line lineCast(std::shared_ptr<Board> board, vect2Di start_board_pos, vect2Di rel_pos, bool is_sight_line)
 {
   std::vector<vect2Di> naive_line = orthogonalBresneham(start_board_pos, start_board_pos + rel_pos);
-  return curveCast(naive_line, is_sight_line);
+  return curveCast(board, naive_line, is_sight_line);
 }
 
 void drawLine(Line line)
@@ -1186,7 +1157,7 @@ void drawSightMap()
     for(int square_num = 0; square_num < static_cast<int>(line.mappings.size()); square_num++)
     {
       SquareMap mapping = line.mappings[square_num];
-      Square board_square = board[mapping.board_pos.x][mapping.board_pos.y];
+      Square* board_square = mapping.board->getSquare(mapping.board_pos);
       int row, col;
       sightMapToScreen(mapping.line_pos, row, col);
       int forground_color = COLOR_WHITE;
@@ -1197,28 +1168,28 @@ void drawSightMap()
       {
         glyph = L"@";
       }
-      else if (board_square.wall == true)
+      else if (board_square->wall == true)
       {
         background_color = COLOR_BLACK;
         forground_color = COLOR_WHITE;
         glyph = WALL_GLYPH;
       }
-      else if (board_square.steam > 0)
+      else if (board_square->steam > 0)
       {
         glyph = STEAM_GLYPH;
       }
-      else if (board_square.entity.lock() != nullptr)
+      else if (board_square->entity.lock() != nullptr)
       {
-        int ccw_rotations_from_right = ((board_square.entity.lock()->faced_direction * mapping.transform.inversed()).ccwRotations() + player_transform.inversed().ccwRotations())%4;
+        int ccw_rotations_from_right = ((board_square->entity.lock()->faced_direction * mapping.transform.inversed()).ccwRotations() + player_transform.inversed().ccwRotations())%4;
         // if we are dealing with a mote
-        if (board_square.entity.lock()->homing == true)
+        if (board_square->entity.lock()->homing == true)
         {
 
           // draw mote
           // Need to account for rotation of the entity, portals, and the player
           glyph = MOTE_GLYPHS[ccw_rotations_from_right];
         }
-        else if (board_square.entity.lock()->can_shoot == true) // if we're dealing with a turret
+        else if (board_square->entity.lock()->can_shoot == true) // if we're dealing with a turret
         {
           forground_color = COLOR_BLACK;
           background_color = COLOR_WHITE;
@@ -1230,10 +1201,10 @@ void drawSightMap()
           glyph = ARROW_GLYPHS[ccw_rotations_from_right];
         }
       }
-      else if (board_square.water > 0)
+      else if (board_square->water > 0)
       {
         glyph = WATER_GLYPH;
-        if (board_square.water <= SHALLOW_WATER_DEPTH)
+        if (board_square->water <= SHALLOW_WATER_DEPTH)
         {
           forground_color = COLOR_CYAN;
         }
@@ -1242,25 +1213,25 @@ void drawSightMap()
           forground_color = COLOR_BLUE;
         }
 
-        if (board_square.plant > 0)
+        if (board_square->plant > 0)
         {
           forground_color = COLOR_BLACK;
           glyph = PLANT_GLYPH;
         }
       }
-      else if (board_square.plant > 0)
+      else if (board_square->plant > 0)
       {
         forground_color = COLOR_GREEN;
         glyph = PLANT_GLYPH;
       }
       else
       {
-        forground_color = board_square.grass_color;
-        glyph = board_square.grass_glyph;
+        forground_color = board_square->grass_color;
+        glyph = board_square->grass_glyph;
       }
 
 
-      if (board_square.fire == true)
+      if (board_square->fire == true)
       {
         background_color = COLOR_RED;
       }
@@ -1290,7 +1261,7 @@ void drawSightMap()
         memory_map[memmappos.x][memmappos.y] = glyph;
       }
       // if we just drew a wall, done with this line
-      if (board_square.wall == true)
+      if (board_square->wall == true)
         break;
     }
   }
@@ -1330,14 +1301,14 @@ void drawBoard()
       screenToBoard(row, col, pos);
       wchar_t glyph;
       int color = 0;
-      if (!onBoard(pos))
+      if (!player_board->onBoard(pos))
         glyph = '.';
-      else if (board[pos.x][pos.y].wall == true)
+      else if (player_board->board[pos.x][pos.y].wall == true)
       {
         glyph = ' ';
         color = 2;
       }
-      else if (board[pos.x][pos.y].entity.lock() != nullptr)
+      else if (player_board->board[pos.x][pos.y].entity.lock() != nullptr)
       {
         color = BLACK_ON_WHITE; 
         glyph = '*';
@@ -1382,84 +1353,117 @@ void drawEverything()
 
 void updateSteam()
 {
-  // each flow is a bunch of steam moving from the first of the tuple to the second.
-  // The third element is the magnitude of the flow
-  std::vector<std::tuple<vect2Di, vect2Di, int>> flows;
-  // for every square on the board
-  for (int x=0; x < BOARD_SIZE; x++)
+  for (auto board : boards)
   {
-    for (int y=0; y < BOARD_SIZE; y++)
+    // each flow is a bunch of steam moving from the first of the tuple to the second.
+    // The third element is the magnitude of the flow
+    std::vector<
+      std::tuple<
+        std::pair<std::shared_ptr<Board>, vect2Di>,
+        std::pair<std::shared_ptr<Board>, vect2Di>, 
+        int
+        >
+      > flows;
+    // for every square on the board
+    for (int x=0; x < board->board_size; x++)
     {
-      vect2Di thispos = vect2Di(x, y);
-      // if this square has steam and fire, there is no more fire
-      if(getSquare(thispos)->steam > 0 && getSquare(thispos)->fire == true)
+      for (int y=0; y < board->board_size; y++)
       {
-        getSquare(thispos)->fire = false;
-      }
-      // if this square only has 1 steam, the steam fades away to nothing
-      if(getSquare(thispos)->steam == 1)
-      {
-        getSquare(thispos)->steam = 0;
-      }
-      // if this square has enough steam to possibly flow elsewhere
-      if(getSquare(thispos)->steam > 1)
-      {
-        std::vector<vect2Di> downhills;
-        // check every adjacent square
-        for (vect2Di dir : ORTHOGONALS)
+        vect2Di thispos = vect2Di(x, y);
+        Square* thissquare = board->getSquare(thispos);
+        // if this square has steam and fire, there is no more fire
+        if(thissquare->steam > 0 && thissquare->fire == true)
         {
-          vect2Di adjpos = posFromStep(thispos, dir);
-          // if there can be a flow from here to there
-          if (onBoard(adjpos) && 
-              getSquare(adjpos)->wall==false &&
-              getSquare(adjpos)->steam <= getSquare(thispos)->steam-2)
+          thissquare->fire = false;
+        }
+        // if this square only has 1 steam, the steam fades away to nothing
+        if(thissquare->steam == 1)
+        {
+          thissquare->steam = 0;
+        }
+        // if this square has enough steam to possibly flow elsewhere
+        if(thissquare->steam > 1)
+        {
+          std::vector<std::pair<std::shared_ptr<Board>, vect2Di>> downhills;
+          // check every adjacent square
+          for (vect2Di dir : ORTHOGONALS)
+          {
+            std::pair<std::shared_ptr<Board>, vect2Di> adjloc = posFromStep(board, thispos, dir);
+            auto adjboard = adjloc.first;
+            auto adjpos = adjloc.second;
+            auto adjsquare = adjboard->getSquare(adjpos);
+            // if there can be a flow from here to there
+            if (adjsquare && 
+                adjsquare->wall==false &&
+                adjsquare->steam <= thissquare->steam-2)
 
-          {
-            downhills.push_back(adjpos);
+            {
+              downhills.push_back(std::make_pair(adjboard, adjpos));
+            }
           }
-        }
-        // Now look through the adjacent squares that have less steam, and find out how much steam this square has to give to the other squares for all the squares to have the same amount of steam.
-        int totalSteam = getSquare(thispos)->steam;
-        for (vect2Di downhillpos : downhills)
-        {
-          totalSteam += getSquare(downhillpos)->steam;
-        }
-        int avgSteam = totalSteam / (1 + downhills.size()); 
-        int extrasteam = totalSteam - (avgSteam * (1+downhills.size())); // TODO: make this not be.
-        // extrasteam can be 1, 2, or 3.  We don't need to do anything if it's 1.
-        extrasteam -=1;
-        // shuffle the downhills to prevent direction bias of distribution of extrasteams 
-        std::random_shuffle(downhills.begin(), downhills.end());
-        for (vect2Di downhillpos : downhills)
-        {
-          int magnitude = avgSteam - getSquare(downhillpos)->steam;
-          if (extrasteam > 0)
+          // Now look through the adjacent squares that have less steam, and find out how much steam this square has to give to the other squares for all the squares to have the same amount of steam.
+          int totalSteam = thissquare->steam;
+          for (std::pair<std::shared_ptr<Board>, vect2Di> downhillloc : downhills)
           {
-            magnitude += 1;
-            extrasteam -= 1;
+            auto adjboard = downhillloc.first;
+            auto adjpos = downhillloc.second;
+            totalSteam += adjboard->getSquare(adjpos)->steam;
           }
-          flows.push_back(std::make_tuple(thispos, downhillpos, magnitude));
+          int avgSteam = totalSteam / (1 + downhills.size()); 
+          int extrasteam = totalSteam - (avgSteam * (1+downhills.size())); // TODO: make this not be.
+          // extrasteam can be 1, 2, or 3.  We don't need to do anything if it's 1.
+          extrasteam -=1;
+          // shuffle the downhills to prevent direction bias of distribution of extrasteams 
+          std::random_shuffle(downhills.begin(), downhills.end());
+          for (std::pair<std::shared_ptr<Board>, vect2Di> downhillloc : downhills)
+          {
+            auto adjboard = downhillloc.first;
+            auto adjpos = downhillloc.second;
+            int magnitude = avgSteam - adjboard->getSquare(adjpos)->steam;
+            if (extrasteam > 0)
+            {
+              magnitude += 1;
+              extrasteam -= 1;
+            }
+            flows.push_back(std::make_tuple(
+                  std::make_pair(board, thispos), 
+                  std::make_pair(adjboard, adjpos),
+                  magnitude
+                  ));
+          }
         }
       }
     }
-  }
-  // randomize the order of attempted flows to prevent directional bias
-  std::random_shuffle(flows.begin(), flows.end());
-  // actually flow the steam
-  // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, flowMagnitude)
-  for (std::tuple<vect2Di, vect2Di, int> flowtuple : flows)
-  {
-    // if there is still enough of a steam difference to allow a flow
-    if (getSquare(std::get<0>(flowtuple))->steam > getSquare(std::get<1>(flowtuple))->steam+1)
+    // randomize the order of attempted flows to prevent directional bias
+    std::random_shuffle(flows.begin(), flows.end());
+    // actually flow the steam
+    // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, flowMagnitude)
+    for (std::tuple<std::pair<std::shared_ptr<Board>, vect2Di>, std::pair<std::shared_ptr<Board>, vect2Di>, int> flowtuple : flows)
     {
-      // Reduce the flow magnitude if we need to
+      // unpack this abomination of a tuple
+      std::pair<std::shared_ptr<Board>, vect2Di> start_loc = std::get<0>(flowtuple);
+      auto start_board = start_loc.first;
+      auto start_pos = start_loc.second;
+      auto start_square = start_board->getSquare(start_pos);
+
+      std::pair<std::shared_ptr<Board>, vect2Di> end_loc = std::get<1>(flowtuple);
+      auto end_board = end_loc.first;
+      auto end_pos = end_loc.second;
+      auto end_square = end_board->getSquare(end_pos);
+
       int magnitude = std::get<2>(flowtuple);
-      if (getSquare(std::get<1>(flowtuple))->steam + magnitude > getSquare(std::get<0>(flowtuple))->steam - magnitude)
+
+      // if there is still enough of a steam difference to allow a flow
+      if (start_square->steam > end_square->steam+1)
       {
-        magnitude = (getSquare(std::get<0>(flowtuple))->steam + getSquare(std::get<1>(flowtuple))->steam)/2 - getSquare(std::get<1>(flowtuple))->steam;
+        // Reduce the flow magnitude if we need to
+        if (end_square->steam + magnitude > start_square->steam - magnitude)
+        {
+          magnitude = (start_square->steam + end_square->steam)/2 - end_square->steam;
+        }
+        start_square->steam -= magnitude;
+        end_square->steam += magnitude;
       }
-      getSquare(std::get<0>(flowtuple))->steam -= magnitude;
-      getSquare(std::get<1>(flowtuple))->steam += magnitude;
     }
   }
 }
@@ -1467,71 +1471,96 @@ void updateSteam()
 // Flow water
 void updateWater()
 {
-  // First check for water->steam from fire
-  // for every square on the board
-  for (int x=0; x < BOARD_SIZE; x++)
+  for (auto board : boards)
   {
-    for (int y=0; y < BOARD_SIZE; y++)
+    // First check for water->steam from fire
+    // for every square on the board
+    for (int x=0; x < board->board_size; x++)
     {
-      vect2Di thispos = vect2Di(x, y);
-      // if this square has water and fire, water turns into steam (the steam takes care of putting out fires)
-      if(getSquare(thispos)->water > 0 && getSquare(thispos)->fire==true)
+      for (int y=0; y < board->board_size; y++)
       {
-        getSquare(thispos)->water  -= 1;
-        getSquare(thispos)->steam  += STEAM_PER_WATER;
+        vect2Di thispos = vect2Di(x, y);
+        auto thissquare = board->getSquare(thispos);
+        // if this square has water and fire, water turns into steam (the steam takes care of putting out fires)
+        if(thissquare->water > 0 && thissquare->fire==true)
+        {
+          thissquare->water  -= 1;
+          thissquare->steam  += STEAM_PER_WATER;
+        }
       }
     }
-  }
 
-  // each flow is one water moving from the first of the tuple to the second.
-  // The third element is the relative direction of the flow
-  std::vector<std::tuple<vect2Di, vect2Di, vect2Di>> flows;
-  // for every square on the board
-  for (int x=0; x < BOARD_SIZE; x++)
-  {
-    for (int y=0; y < BOARD_SIZE; y++)
+    // each flow is one water moving from the first of the tuple to the second.
+    // The third element is the relative direction of the flow from the first square
+    std::vector<std::tuple<std::pair<std::shared_ptr<Board>, vect2Di>,std::pair<std::shared_ptr<Board>, vect2Di>, vect2Di>> flows;
+    // for every square on the board
+    for (int x=0; x < board->board_size; x++)
     {
-      vect2Di thispos = vect2Di(x, y);
-      // if this square has water deeper than 1
-      if(getSquare(thispos)->water > 1)
+      for (int y=0; y < board->board_size; y++)
       {
-        // check every adjacent square
-        for (vect2Di dir : ORTHOGONALS)
+        vect2Di thispos = vect2Di(x, y);
+        Square* thissquare = board->getSquare(thispos);
+        // if this square has water deeper than 1
+        if(thissquare->water > 1)
         {
-          vect2Di adjpos = posFromStep(thispos, dir);
-          // if there can be a flow from here to there
-          // TODO: different flow rules for shallow vs deep water?
-          if (onBoard(adjpos) && 
-              getSquare(adjpos)->wall==false &&
-              getSquare(adjpos)->plant==false &&
-              getSquare(adjpos)->water <= getSquare(thispos)->water-2)
-
+          // check every adjacent square
+          for (vect2Di dir : ORTHOGONALS)
           {
-            if (random(0, (AVG_WATER_FLOW_TIME-1) * 2) == 0)
+            std::shared_ptr<Board> adjboard;
+            vect2Di adjpos; 
+            std::tie(adjboard, adjpos) = posFromStep(board, thispos, dir);
+            Square* adjsquare = adjboard->getSquare(adjpos);
+            // if there can be a flow from here to there
+            // TODO: different flow rules for shallow vs deep water?
+            if (adjsquare != nullptr && 
+                adjsquare->wall==false &&
+                adjsquare->plant==false &&
+                adjsquare->water <= thissquare->water-2)
+
             {
-              flows.push_back(std::make_tuple(thispos, adjpos, dir));
+              if (random(0, (AVG_WATER_FLOW_TIME-1) * 2) == 0)
+              {
+                flows.push_back(std::make_tuple(
+                      std::make_pair(board, thispos), 
+                      std::make_pair(adjboard, adjpos), 
+                      dir
+                      ));
+              }
             }
           }
         }
       }
     }
-  }
-  // randomize the order of attempted flows to prevent directional bias
-  std::random_shuffle(flows.begin(), flows.end());
-  // actually flow the water the plants in the selected locations
-  // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, relativeDirectionOfFlowFromTheSourceSquare)
-  for (std::tuple<vect2Di, vect2Di, vect2Di> flowtuple : flows)
-  {
-    // if there is still enough of a water difference to allow a flow
-    if (getSquare(std::get<0>(flowtuple))->water > getSquare(std::get<1>(flowtuple))->water+1)
+    // randomize the order of attempted flows to prevent directional bias
+    std::random_shuffle(flows.begin(), flows.end());
+    // actually flow the water the plants in the selected locations
+    // REMINDER: the tuple is (absoluteSourcePosition, absoluteEndPosition, relativeDirectionOfFlowFromTheSourceSquare)
+    for (std::tuple<std::pair<std::shared_ptr<Board>, vect2Di>,std::pair<std::shared_ptr<Board>, vect2Di>, vect2Di> flowtuple : flows)
     {
-     getSquare(std::get<0>(flowtuple))->water -= 1;
-     getSquare(std::get<1>(flowtuple))->water += 1;
-     // Also push the player if the player is there
-     if (std::get<0>(flowtuple) == player_pos)
-     {
-       attemptMove(std::get<2>(flowtuple), false);
-     }
+      // unpack the tuple
+      vect2Di start_pos, end_pos, flow_dir;
+      std::shared_ptr<Board> start_board, end_board;
+      std::pair<std::shared_ptr<Board>, vect2Di> start_loc, end_loc;
+
+      // Can't nest "tie" :-(
+      std::tie(start_loc, end_loc, flow_dir) = flowtuple;
+      std::tie(start_board, start_pos) = start_loc;
+      std::tie(end_board, end_pos) = end_loc;
+
+      Square* start_square = start_board->getSquare(start_pos);
+      Square* end_square = end_board->getSquare(end_pos);
+
+      // if there is still enough of a water difference to allow a flow
+      if (start_square->water > end_square->water+1)
+      {
+        start_square->water -= 1;
+        end_square->water += 1;
+        // Also push the player if the player is there
+        if (start_pos == player_pos)
+        {
+          attemptMove(flow_dir, false);
+        }
+      }
     }
   }
 }
@@ -1539,40 +1568,47 @@ void updateWater()
 // fire spreading and damaging plants
 void updateFire()
 {
-  std::vector<vect2Di> newFires;
-  // for every square on the board
-  for (int x=0; x < BOARD_SIZE; x++)
+  std::vector<std::pair<std::shared_ptr<Board>, vect2Di>> newFires;
+  for (auto board : boards)
   {
-    for (int y=0; y < BOARD_SIZE; y++)
+    // for every square on the board
+    for (int x=0; x < board->board_size; x++)
     {
-      vect2Di thispos = vect2Di(x, y);
-      // if this square has a fire
-      if(getSquare(thispos)->fire == true)
+      for (int y=0; y < board->board_size; y++)
       {
-        // apply damage to the current plant, maybe destroying it and putting out the fire
-        if (getSquare(thispos)->plant > 0)
+        vect2Di thispos = vect2Di(x, y);
+        Square* thissquare = board->getSquare(thispos);
+        // if this square has a fire
+        if(thissquare->fire == true)
         {
-          getSquare(thispos)->plant -=1;
-        }
-        // Fire without fuel can't spread
-        if (getSquare(thispos)->plant == 0)
-        {
-          getSquare(thispos)->fire = false;
-        }
-        else 
-        {
-          // check every adjacent square
-          for (vect2Di dir : ORTHOGONALS)
+          // apply damage to the current plant, maybe destroying it and putting out the fire
+          if (thissquare->plant > 0)
           {
-            vect2Di adjpos = posFromStep(thispos, dir);
-            // if the space has no fire, the fire may spread
-            if (onBoard(adjpos) && 
-                getSquare(adjpos)->wall == false && 
-                getSquare(adjpos)->fire == false)
+            thissquare->plant -=1;
+          }
+          // Fire without fuel can't spread
+          if (thissquare->plant == 0)
+          {
+            thissquare->fire = false;
+          }
+          else 
+          {
+            // check every adjacent square
+            for (vect2Di dir : ORTHOGONALS)
             {
-              if (random(0, (AVG_FIRE_SPREAD_TIME-1) * 2) == 0)
+              vect2Di adjpos; 
+              std::shared_ptr<Board> adjboard;
+              std::tie(adjboard, adjpos) = posFromStep(board, thispos, dir);
+              Square* adjsquare = adjboard->getSquare(adjpos);
+              // if the space has no fire, the fire may spread
+              if (adjsquare != nullptr && 
+                  adjsquare->wall == false && 
+                  adjsquare->fire == false)
               {
-                newFires.push_back(adjpos);
+                if (random(0, (AVG_FIRE_SPREAD_TIME-1) * 2) == 0)
+                {
+                  newFires.push_back(std::make_pair(adjboard, adjpos));
+                }
               }
             }
           }
@@ -1581,9 +1617,9 @@ void updateFire()
     }
   }
   // actually spawn the fires in the selected locations
-  for (vect2Di pos : newFires)
+  for (auto loc : newFires)
   {
-    getSquare(pos)->fire = true;
+    loc.first->getSquare(loc.second)->fire = true;
   }
 }
 
@@ -1591,26 +1627,32 @@ void updateFire()
 // For now, simple expansion
 void updatePlants()
 {
-  std::vector<vect2Di> whereToSpawnPlants;
-  // for every square on the board
-  for (int x=0; x < BOARD_SIZE; x++)
+  std::vector<std::pair<std::shared_ptr<Board>, vect2Di>> whereToSpawnPlants;
+  for (auto board : boards)
   {
-    for (int y=0; y < BOARD_SIZE; y++)
+    // for every square on the board
+    for (int x=0; x < board->board_size; x++)
     {
-      vect2Di thispos = vect2Di(x, y);
-      // if this square has a plant THAT IS NOT ON FIRE
-      if(getSquare(thispos)->plant != 0 && getSquare(thispos)->fire == false)
+      for (int y=0; y < board->board_size; y++)
       {
-        // check every adjacent square
-        for (vect2Di dir : ORTHOGONALS)
+        vect2Di thispos = vect2Di(x, y);
+        Square* thissquare = board->getSquare(thispos);
+        // if this square has a plant THAT IS NOT ON FIRE
+        if(thissquare->plant != 0 && thissquare->fire == false)
         {
-          vect2Di adjpos = posFromStep(thispos, dir);
-          // if the space is empty
-          if (posIsWalkable(adjpos))
+          // check every adjacent square
+          for (vect2Di dir : ORTHOGONALS)
           {
-            if (random(0, (AVG_PLANT_SPAWN_TIME-1) * 2) == 0)
+            vect2Di adjpos;
+            std::shared_ptr<Board> adjboard;
+            std::tie(adjboard, adjpos) = posFromStep(board, thispos, dir);
+            // if the space is empty
+            if (posIsWalkable(adjboard, adjpos))
             {
-              whereToSpawnPlants.push_back(adjpos);
+              if (random(0, (AVG_PLANT_SPAWN_TIME-1) * 2) == 0)
+              {
+                whereToSpawnPlants.push_back(std::make_pair(adjboard, adjpos));
+              }
             }
           }
         }
@@ -1618,12 +1660,12 @@ void updatePlants()
     }
   }
   // actually spawn the plants in the selected locations
-  for (vect2Di pos : whereToSpawnPlants)
+  for (auto loc : whereToSpawnPlants)
   {
     // need to check this because we don't want to try to double spawn a plant (a square with 2 adjacent plants has 2 chances to spawn)
-    if (posIsWalkable(pos))
+    if (posIsWalkable(loc.first, loc.second))
     {
-      createPlant(pos);
+      createPlant(loc.first, loc.second);
     }
   }
 }
@@ -1633,7 +1675,7 @@ int main()
   setlocale(LC_ALL, "");
   initNCurses();
 
-  initBoard();
+  initWorld();
 
   while(true)
   {

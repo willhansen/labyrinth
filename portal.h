@@ -3,10 +3,14 @@
 
 #include "geometry.h"
 #include <ncursesw/ncurses.h>
+#include <memory>
+
+struct Board;
 
 struct Portal
 {
   vect2Di new_pos;
+  std::weak_ptr<Board> new_board;
   mat2Di transform;
   int color = COLOR_YELLOW; // white is unchanged, otherwise tints by color (maybe black does something else)
 };

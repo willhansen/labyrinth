@@ -4,10 +4,14 @@
 #include <vector>
 #include "geometry.h"
 #include <ncursesw/ncurses.h>
+#include <memory>
+
+struct Board;
 
 struct SquareMap
 {
   // in the board's frame of reference (absolute)
+  std::shared_ptr<Board> board;
   vect2Di board_pos;
 
   // relative to the line's starting position

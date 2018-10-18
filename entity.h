@@ -2,10 +2,14 @@
 #define MOTE_H
 
 #include "geometry.h"
+#include <memory>
+
+struct Board;
 
 struct Entity
 {
   vect2Di pos;
+  std::weak_ptr<Board> board;
   // These values are relative to the current position. 
   // if this vector is zero, the mote cannot see the player
   // Set as the player's sight lines are updated
