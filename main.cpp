@@ -17,7 +17,7 @@
 
 const int BOARD_SIZE = 100;
 const int MEMORY_MAP_SIZE = 101;
-const int SIGHT_RADIUS = 50; 
+const int SIGHT_RADIUS = 30; 
 const bool NAIVE_VIEW = false;
 const bool PORTALS_OFF = false;
 
@@ -525,11 +525,11 @@ void makeMirror(std::shared_ptr<Board> board, vect2Di square, vect2Di step)
 void initWorld()
 {
   // make the boards
-  for (int i = 0; i < 2; i++)
+  for (int i = 0; i < 5; i++)
   {
     boards.push_back(std::make_shared<Board>(Board(BOARD_SIZE)));
   }
-  player_board = boards[1];
+  player_board = boards[0];
   player_pos = vect2Di(5, 5);
 
   
@@ -587,6 +587,10 @@ void initWorld()
 
   // to the second board
   makeNicePortalPair(boards[0], 20, 40, boards[1], 20, 40, 7, 0);
+  // third
+  makeNicePortalPair(boards[1], 20, 30, boards[2], 20, 10, 7, 0);
+  // fourth
+  makeNicePortalPair(boards[2], 20, 40, boards[3], 20, 40, 7, 0);
 
   makeNicePortalPair(boards[0], 60, 20, boards[0], 72, 20, 5, 0);
   for (int y = 10; y < 31; y++)
@@ -959,9 +963,9 @@ void orthogonalRedirect(std::shared_ptr<Board> start_board, vect2Di start_pos, v
   {
     return;
   }
-  Square square = start_board->board[start_pos.x][start_pos.y];
+  Square* square = start_board->getSquare(start_pos);
 
-  std::shared_ptr<Portal> portalptr = *getPortal(square, step);
+  std::shared_ptr<Portal> portalptr = *getPortal(*square, step);
 
   if (portalptr == nullptr)
   {
