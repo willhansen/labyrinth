@@ -12,7 +12,7 @@ struct Portal
   vect2Di new_pos;
   std::weak_ptr<Board> new_board;
   mat2Di transform;
-  int color = COLOR_YELLOW; // white is unchanged, otherwise tints by color (maybe black does something else)
+  int color = COLOR_WHITE; // white is unchanged, otherwise tints by color (maybe black does something else)
 };
 
 #endif

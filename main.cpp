@@ -6,8 +6,8 @@
 #include "entity.h"
 #include "geometry.h"
 
-#include <ncursesw/ncurses.h>			/* ncurses.h includes stdio.h */  
-#include <string.h> 
+#include <ncursesw/ncurses.h>			/* ncurses.h includes stdio.h */
+#include <string.h>
 #include <locale.h>
 #include <vector>
 #include <tuple>
@@ -17,7 +17,7 @@
 
 const int BOARD_SIZE = 100;
 const int MEMORY_MAP_SIZE = 101;
-const int SIGHT_RADIUS = 30; 
+const int SIGHT_RADIUS = 30;
 const bool NAIVE_VIEW = false;
 const bool PORTALS_OFF = false;
 
@@ -84,9 +84,9 @@ bool posIsEmpty(std::shared_ptr<Board> board, vect2Di pos)
 {
   Square* squareptr = board->getSquare(pos);
   // Square must be empty and also actually be there
-  if (squareptr == nullptr || 
-      squareptr->entity.lock() != nullptr || 
-      squareptr->wall != false || 
+  if (squareptr == nullptr ||
+      squareptr->entity.lock() != nullptr ||
+      squareptr->wall != false ||
       squareptr->water != 0 ||
       squareptr->plant != 0 ||
       squareptr->fire != false ||
@@ -104,9 +104,9 @@ bool posIsWalkable(std::shared_ptr<Board> board, vect2Di pos)
 {
   Square* squareptr = board->getSquare(pos);
   // Square must be empty and also actually be there
-  if (squareptr == nullptr || 
-      squareptr->entity.lock() != nullptr || 
-      squareptr->wall != false || 
+  if (squareptr == nullptr ||
+      squareptr->entity.lock() != nullptr ||
+      squareptr->wall != false ||
       squareptr->water > SHALLOW_WATER_DEPTH ||
       squareptr->plant != 0 ||
       squareptr->fire != false ||
@@ -124,9 +124,9 @@ bool posIsFlyable(std::shared_ptr<Board> board, vect2Di pos)
 {
   Square* squareptr = board->getSquare(pos);
   // Square must be empty and also actually be there
-  if (squareptr == nullptr || 
-      squareptr->entity.lock() != nullptr || 
-      squareptr->wall != false || 
+  if (squareptr == nullptr ||
+      squareptr->entity.lock() != nullptr ||
+      squareptr->wall != false ||
       squareptr->plant != 0 ||
       pos == player_pos)
   {
@@ -508,11 +508,19 @@ void makeNicePortalPair( std::shared_ptr<Board> b1,int x1, int y1, std::shared_p
 {
   b1->board[x1][y1].wall = true;
   b2->board[x2][y2].wall = true;
-  b1->board[x1+dx+1][y1+dy].wall = true;
-  b2->board[x2+dx+1][y2+dy].wall = true;
-  for (int rx = 1; rx <= dx; rx++)
+  b1->board[x1+dx][y1+dy].wall = true;
+  b2->board[x2+dx][y2+dy].wall = true;
+  int signx = dx>=0 ? 1 : -1;
+  int signy = dy>=0 ? 1 : -1;
+
+  for (int rx = 0; rx != dx; rx+=signx)
   {
     makePortalPair( b1,vect2Di(x1+rx,y1), b2,vect2Di(x2+rx,y2), false);
+  }
+
+  for (int ry = 0; ry != dy; ry+=signy)
+  {
+    makePortalPair( b1,vect2Di(x1+dx,y1+ry), b2,vect2Di(x2+dx,y2+ry), true);
   }
 
 }
@@ -532,7 +540,7 @@ void initWorld()
   player_board = boards[0];
   player_pos = vect2Di(5, 5);
 
-  
+
   boards[0]->rectToWall(30, 5, 50, 20);
 
   //rectToWall(20,10,22,12);
@@ -572,25 +580,139 @@ void initWorld()
   //makePortalPair(vect2Di(10, 12), vect2Di(20, 12));
   //makePortalPair(vect2Di(10, 11), vect2Di(20, 11));
   //makePortalPair(vect2Di(10, 10), vect2Di(20, 10));
-  
+
   // This should be a mirror
   makeMirror(boards[0], vect2Di(1,9), LEFT);
   makeMirror(boards[0], vect2Di(1,8), LEFT);
   makeMirror(boards[0], vect2Di(1,7), LEFT);
   makeMirror(boards[0], vect2Di(1,6), LEFT);
-  
+
   // this should be a retro-reflector
   makePortalPair2(boards[0], vect2Di(1, 4), LEFT, boards[0], vect2Di(1, 4), LEFT, false);
 
   // the infinite tunnel
   makeNicePortalPair(boards[0], 20, 20, boards[0], 20, 30, 7, 0);
 
-  // to the second board
-  makeNicePortalPair(boards[0], 20, 40, boards[1], 20, 40, 7, 0);
-  // third
-  makeNicePortalPair(boards[1], 20, 30, boards[2], 20, 10, 7, 0);
-  // fourth
-  makeNicePortalPair(boards[2], 20, 40, boards[3], 20, 40, 7, 0);
+
+  // Make links to the other 3 boards in the top left corner of the first board
+  // to the second board from first
+  makeNicePortalPair(boards[0], 8, BOARD_SIZE - 7, boards[1], 8, 6, 8, 0);
+  // third from second
+  makeNicePortalPair(boards[1], 6, 8, boards[2], BOARD_SIZE - 7, 8, 0, 8);
+  // fourth from third
+  makeNicePortalPair(boards[2], BOARD_SIZE - 9, 6, boards[3], BOARD_SIZE - 9, BOARD_SIZE - 7, -8, 0);
+  // fourth from first
+  makeNicePortalPair(boards[0], 6, BOARD_SIZE - 9, boards[3], BOARD_SIZE - 7, BOARD_SIZE - 9, 0, -8);
+  // third from first
+  makeNicePortalPair(boards[0], 8, BOARD_SIZE - 11 - 8, boards[2], BOARD_SIZE - 9 - 8, 10 + 8 , 8, 0);
+
+  // fill in the center of the ostensible cross in the middle of the numbers
+  boards[0]->board[7][BOARD_SIZE-7].wall = true;
+  boards[0]->board[6][BOARD_SIZE-7].wall = true;
+  boards[0]->board[6][BOARD_SIZE-8].wall = true;
+
+  boards[1]->board[7][6].wall = true;
+  boards[1]->board[6][6].wall = true;
+  boards[1]->board[6][7].wall = true;
+
+  boards[2]->board[BOARD_SIZE-8][6].wall = true;
+  boards[2]->board[BOARD_SIZE-7][6].wall = true;
+  boards[2]->board[BOARD_SIZE-7][7].wall = true;
+
+  boards[3]->board[BOARD_SIZE-8][BOARD_SIZE-7].wall = true;
+  boards[3]->board[BOARD_SIZE-7][BOARD_SIZE-7].wall = true;
+  boards[3]->board[BOARD_SIZE-7][BOARD_SIZE-8].wall = true;
+
+  boards[0]->board[7][BOARD_SIZE-11-8].wall = true;
+  boards[0]->board[6][BOARD_SIZE-11-8].wall = true;
+  boards[0]->board[6][BOARD_SIZE-10-8].wall = true;
+
+  boards[2]->board[BOARD_SIZE-8][18].wall = true;
+  boards[2]->board[BOARD_SIZE-7][18].wall = true;
+  boards[2]->board[BOARD_SIZE-7][17].wall = true;
+
+  // draw a mirror on the third board
+  for (int i=5; i <=15; i++)
+  {
+    makeMirror(boards[2], vect2Di(BOARD_SIZE - 20, i), LEFT);
+  }
+  // Draw numbers out of walls to show which board is which
+  // 1
+  int x = 11;
+  int y = BOARD_SIZE - 11;
+  //boards[0]->board[x+0][y-0].wall = true;
+  boards[0]->board[x+1][y-0].wall = true;
+  //boards[0]->board[x+2][y-0].wall = true;
+  boards[0]->board[x+0][y-1].wall = true;
+  boards[0]->board[x+1][y-1].wall = true;
+  //boards[0]->board[x+2][y-1].wall = true;
+  //boards[0]->board[x+0][y-2].wall = true;
+  boards[0]->board[x+1][y-2].wall = true;
+  //boards[0]->board[x+2][y-2].wall = true;
+  //boards[0]->board[x+0][y-3].wall = true;
+  boards[0]->board[x+1][y-3].wall = true;
+  //boards[0]->board[x+2][y-3].wall = true;
+  boards[0]->board[x+0][y-4].wall = true;
+  boards[0]->board[x+1][y-4].wall = true;
+  boards[0]->board[x+2][y-4].wall = true;
+
+  // 2
+  x = 11;
+  y = 14;
+  boards[1]->board[x+0][y-0].wall = true;
+  boards[1]->board[x+1][y-0].wall = true;
+  boards[1]->board[x+2][y-0].wall = true;
+  //boards[1]->board[x+0][y-1].wall = true;
+  //boards[1]->board[x+1][y-1].wall = true;
+  boards[1]->board[x+2][y-1].wall = true;
+  boards[1]->board[x+0][y-2].wall = true;
+  boards[1]->board[x+1][y-2].wall = true;
+  boards[1]->board[x+2][y-2].wall = true;
+  boards[1]->board[x+0][y-3].wall = true;
+  //boards[1]->board[x+1][y-3].wall = true;
+  //boards[1]->board[x+2][y-3].wall = true;
+  boards[1]->board[x+0][y-4].wall = true;
+  boards[1]->board[x+1][y-4].wall = true;
+  boards[1]->board[x+2][y-4].wall = true;
+
+  // 3
+  x = BOARD_SIZE - 14;
+  y = 14;
+  boards[2]->board[x+0][y-0].wall = true;
+  boards[2]->board[x+1][y-0].wall = true;
+  boards[2]->board[x+2][y-0].wall = true;
+  //boards[2]->board[x+0][y-1].wall = true;
+  //boards[2]->board[x+1][y-1].wall = true;
+  boards[2]->board[x+2][y-1].wall = true;
+  boards[2]->board[x+0][y-2].wall = true;
+  boards[2]->board[x+1][y-2].wall = true;
+  boards[2]->board[x+2][y-2].wall = true;
+  //boards[2]->board[x+0][y-3].wall = true;
+  //boards[2]->board[x+1][y-3].wall = true;
+  boards[2]->board[x+2][y-3].wall = true;
+  boards[2]->board[x+0][y-4].wall = true;
+  boards[2]->board[x+1][y-4].wall = true;
+  boards[2]->board[x+2][y-4].wall = true;
+
+  //4
+  x = BOARD_SIZE - 14;
+  y = BOARD_SIZE - 11;
+  boards[3]->board[x+0][y-0].wall = true;
+  //boards[3]->board[x+1][y-0].wall = true;
+  boards[3]->board[x+2][y-0].wall = true;
+  boards[3]->board[x+0][y-1].wall = true;
+  //boards[3]->board[x+1][y-1].wall = true;
+  boards[3]->board[x+2][y-1].wall = true;
+  boards[3]->board[x+0][y-2].wall = true;
+  boards[3]->board[x+1][y-2].wall = true;
+  boards[3]->board[x+2][y-2].wall = true;
+  //boards[3]->board[x+0][y-3].wall = true;
+  //boards[3]->board[x+1][y-3].wall = true;
+  boards[3]->board[x+2][y-3].wall = true;
+  //boards[3]->board[x+0][y-4].wall = true;
+  //boards[3]->board[x+1][y-4].wall = true;
+  boards[3]->board[x+2][y-4].wall = true;
+
 
   makeNicePortalPair(boards[0], 60, 20, boards[0], 72, 20, 5, 0);
   for (int y = 10; y < 31; y++)
@@ -765,7 +887,7 @@ void facePlayer(std::shared_ptr<Entity> entityptr)
         newfaced = LEFT;
       }
     }
-    else 
+    else
     {
       if (dir.y > 0)
       {
@@ -835,7 +957,7 @@ void updateEntities()
       {
         if (entityptr->cooldown > 0)
         {
-          entityptr->cooldown -= 1; 
+          entityptr->cooldown -= 1;
         }
         else
         {
@@ -887,7 +1009,7 @@ void shiftMemoryMap(vect2Di player_movement)
   // Edges are filled with spaces.
   //
   auto newmap = memory_map;
-  
+
   // For every square of the memory map
   for (int x=0; x < MEMORY_MAP_SIZE; x++)
   {
@@ -912,11 +1034,11 @@ void shiftMemoryMap(vect2Di player_movement)
 void updateSightLines()
 {
   // the order these are updated is essentially bottom to top in terms of draw order
-  
+
   std::vector<vect2Di> rel_p;
 
   // The orthogonals
-  
+
   rel_p.push_back(vect2Di(SIGHT_RADIUS, 0));
 
   rel_p.push_back(vect2Di(0, SIGHT_RADIUS));
@@ -1036,7 +1158,7 @@ Line curveCast(std::shared_ptr<Board> start_board, std::vector<vect2Di> naive_sq
     mat2Di portal_transform;
     int portal_color = COLOR_WHITE; // white means no change
     if (!PORTALS_OFF)
-    { 
+    {
       orthogonalRedirect(current_board, current_pos, transformed_naive_step, next_board, next_pos, portal_transform, portal_color);
     }
     if(portal_color != COLOR_WHITE)
@@ -1119,7 +1241,7 @@ void drawLine(Line line)
       vect2Di dpos = line_pos - prev_line_pos;
       if (dpos.x == 0)
         glyph = '|';
-      else 
+      else
       {
         double slope = static_cast<double>(dpos.y)/static_cast<double>(dpos.x);
         if (slope > 2)
@@ -1160,7 +1282,7 @@ void drawSightMap()
   int row, col;
   sightMapToScreen(vect2Di(0, 0), row, col);
   mvaddwstr(row, col, L"@");
-  
+
   // For every sight line
   for(int line_num = 0; line_num < static_cast<int>(player_sight_lines.size()); line_num++)
   {
@@ -1304,7 +1426,7 @@ void drawBoard()
 {
   // Draw all the floor and walls
   // For every square on the screen
-  
+
   for (int row = 0; row < num_rows; row++)
   {
     for (int col = 0; col < num_cols; col++)
@@ -1322,7 +1444,7 @@ void drawBoard()
       }
       else if (player_board->board[pos.x][pos.y].entity.lock() != nullptr)
       {
-        color = BLACK_ON_WHITE; 
+        color = BLACK_ON_WHITE;
         glyph = '*';
       }
       else
@@ -1372,7 +1494,7 @@ void updateSteam()
     std::vector<
       std::tuple<
         std::pair<std::shared_ptr<Board>, vect2Di>,
-        std::pair<std::shared_ptr<Board>, vect2Di>, 
+        std::pair<std::shared_ptr<Board>, vect2Di>,
         int
         >
       > flows;
@@ -1405,7 +1527,7 @@ void updateSteam()
             auto adjpos = adjloc.second;
             auto adjsquare = adjboard->getSquare(adjpos);
             // if there can be a flow from here to there
-            if (adjsquare && 
+            if (adjsquare &&
                 adjsquare->wall==false &&
                 adjsquare->steam <= thissquare->steam-2)
 
@@ -1421,11 +1543,11 @@ void updateSteam()
             auto adjpos = downhillloc.second;
             totalSteam += adjboard->getSquare(adjpos)->steam;
           }
-          int avgSteam = totalSteam / (1 + downhills.size()); 
+          int avgSteam = totalSteam / (1 + downhills.size());
           int extrasteam = totalSteam - (avgSteam * (1+downhills.size())); // TODO: make this not be.
           // extrasteam can be 1, 2, or 3.  We don't need to do anything if it's 1.
           extrasteam -=1;
-          // shuffle the downhills to prevent direction bias of distribution of extrasteams 
+          // shuffle the downhills to prevent direction bias of distribution of extrasteams
           std::random_shuffle(downhills.begin(), downhills.end());
           for (std::pair<std::shared_ptr<Board>, vect2Di> downhillloc : downhills)
           {
@@ -1438,7 +1560,7 @@ void updateSteam()
               extrasteam -= 1;
             }
             flows.push_back(std::make_tuple(
-                  std::make_pair(board, thispos), 
+                  std::make_pair(board, thispos),
                   std::make_pair(adjboard, adjpos),
                   magnitude
                   ));
@@ -1519,12 +1641,12 @@ void updateWater()
           for (vect2Di dir : ORTHOGONALS)
           {
             std::shared_ptr<Board> adjboard;
-            vect2Di adjpos; 
+            vect2Di adjpos;
             std::tie(adjboard, adjpos) = posFromStep(board, thispos, dir);
             Square* adjsquare = adjboard->getSquare(adjpos);
             // if there can be a flow from here to there
             // TODO: different flow rules for shallow vs deep water?
-            if (adjsquare != nullptr && 
+            if (adjsquare != nullptr &&
                 adjsquare->wall==false &&
                 adjsquare->plant==false &&
                 adjsquare->water <= thissquare->water-2)
@@ -1533,8 +1655,8 @@ void updateWater()
               if (random(0, (AVG_WATER_FLOW_TIME-1) * 2) == 0)
               {
                 flows.push_back(std::make_tuple(
-                      std::make_pair(board, thispos), 
-                      std::make_pair(adjboard, adjpos), 
+                      std::make_pair(board, thispos),
+                      std::make_pair(adjboard, adjpos),
                       dir
                       ));
               }
@@ -1603,18 +1725,18 @@ void updateFire()
           {
             thissquare->fire = false;
           }
-          else 
+          else
           {
             // check every adjacent square
             for (vect2Di dir : ORTHOGONALS)
             {
-              vect2Di adjpos; 
+              vect2Di adjpos;
               std::shared_ptr<Board> adjboard;
               std::tie(adjboard, adjpos) = posFromStep(board, thispos, dir);
               Square* adjsquare = adjboard->getSquare(adjpos);
               // if the space has no fire, the fire may spread
-              if (adjsquare != nullptr && 
-                  adjsquare->wall == false && 
+              if (adjsquare != nullptr &&
+                  adjsquare->wall == false &&
                   adjsquare->fire == false)
               {
                 if (random(0, (AVG_FIRE_SPREAD_TIME-1) * 2) == 0)
@@ -1747,7 +1869,7 @@ int main()
     updateSteam();
     updateSightLines();
     updateEntities();
-      
+
     // draw things
     drawEverything();
   }
@@ -1755,4 +1877,3 @@ int main()
   endwin(); // End curses
   return 0;
 }
-
