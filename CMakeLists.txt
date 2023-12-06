@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
+project(Labyrinth)
+
+set( CURSES_INCLUDE_PATH "/usr/include")
+set( CURSES_LIBRARY "/usr/lib/x86_64-linux-gnu/libncurses.so")
 
 set(CURSES_NEED_WIDE TRUE)
 set(CURSES_NEED_NCURSES TRUE)
